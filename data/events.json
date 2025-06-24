@@ -1,0 +1,136 @@
+[
+  {
+    "slug": "jazz-night",
+    "artist": "Ishan",
+    "title": "Jazz night",
+    "date": "2025-06-20",
+    "location": "Albany",
+    "description": "Come now"
+  },
+  {
+    "slug": "jazz-night-downtown",
+    "artist": "Maya Johnson",
+    "title": "Jazz Night Downtown",
+    "date": "2024-02-15",
+    "location": "Blue Note Cafe",
+    "description": "Join me for an intimate evening of jazz music featuring original compositions and classic standards. Limited seating available.",
+    "blog": "I'm incredibly excited to announce my upcoming jazz performance at the legendary Blue Note Cafe! This intimate venue has hosted some of the greatest jazz musicians of our time, and I'm honored to be performing on their stage.\n\nFor this special evening, I'll be performing a mix of my original compositions alongside timeless jazz standards. The setlist includes pieces that are close to my heart - songs that tell stories of love, loss, and the beautiful complexity of life.\n\nThe Blue Note Cafe provides the perfect atmosphere for jazz - dim lighting, intimate seating, and acoustics that make every note resonate. I'll be accompanied by some incredible local musicians who have become dear friends and collaborators.\n\nThis performance is particularly special because it marks the debut of three new songs I've been working on. These pieces draw inspiration from my recent travels and the amazing people I've met along the way.\n\nSeating is limited, so I encourage you to grab your tickets early. Come ready to lose yourself in the music and be part of an unforgettable evening of jazz.",
+    "rsvp": "https://example.com/rsvp-jazz-night",
+    "instagram": "mayajohnsonmusic",
+    "x": "mayajazz",
+    "linkedin": "https://linkedin.com/in/maya-johnson-music",
+    "genre": "Jazz",
+    "tags": [
+      "jazz",
+      "original music",
+      "standards",
+      "intimate venue",
+      "live music",
+      "blue note cafe"
+    ],
+    "ticketPrice": "$25",
+    "featured": true
+  },
+  {
+    "slug": "electric-dreams-showcase",
+    "artist": "Alex Chen",
+    "title": "Electric Dreams Showcase",
+    "date": "2024-03-22",
+    "location": "The Warehouse",
+    "description": "An immersive electronic music experience featuring cutting-edge beats, visual projections, and experimental soundscapes.",
+    "blog": "Get ready to dive into a world where technology meets creativity! Electric Dreams Showcase isn't just a concert - it's a full sensory experience that pushes the boundaries of what electronic music can be.\n\nI've been working on this project for over a year, combining elements of ambient, techno, and experimental electronic music with custom visual projections that react to the sound in real-time. Every beat, every melody, every sonic texture will be accompanied by stunning visuals that create an otherworldly atmosphere.\n\nThe Warehouse provides the perfect industrial backdrop for this journey. The space has been transformed into an electronic playground where sound bounces off the walls and the visuals paint the entire environment. This isn't background music - this is music you feel in your chest, see with your eyes, and experience with your whole being.\n\nI'll be performing alongside some incredible local electronic artists who share my passion for pushing creative boundaries. Together, we're creating something that's never been done in our city before.",
+    "rsvp": "https://example.com/electric-dreams-tickets",
+    "instagram": "alexchensounds",
+    "x": "electricdreamsmusic",
+    "linkedin": "https://linkedin.com/in/alex-chen-music",
+    "genre": "Electronic",
+    "tags": [
+      "electronic",
+      "experimental",
+      "visual art",
+      "immersive",
+      "techno",
+      "ambient",
+      "warehouse"
+    ],
+    "ticketPrice": "$30",
+    "featured": false
+  },
+  {
+    "slug": "acoustic-storytelling-evening",
+    "artist": "Sarah Williams",
+    "title": "Acoustic Storytelling Evening",
+    "date": "2024-02-28",
+    "location": "Moonlight Coffee House",
+    "description": "An intimate acoustic performance where every song tells a story. Folk-inspired originals mixed with reimagined classics.",
+    "blog": "There's something magical about the connection between artist and audience in an intimate setting. This acoustic evening is all about that connection - just me, my guitar, and the stories that flow through music.\n\nI'll be sharing songs from my upcoming album 'Midnight Conversations' - deeply personal pieces inspired by late-night talks with friends, family, and strangers who became friends. Each song is a story, and each story is a piece of the human experience we all share.\n\nThe Moonlight Coffee House has become my second home over the past year. It's where I've written many of these songs, sitting in the corner with a notebook and my guitar, watching people live their lives. Now I get to share those observations and emotions with you in the very place where they were born.\n\nExpect an evening of vulnerability, honesty, and the kind of music that makes you feel less alone in the world. Bring a friend, bring a journal, or just bring yourself and an open heart.",
+    "rsvp": "https://example.com/acoustic-storytelling",
+    "instagram": "sarahwilliamsmusic",
+    "x": "sarahfolkmusic",
+    "genre": "Folk",
+    "tags": [
+      "acoustic",
+      "folk",
+      "storytelling",
+      "intimate",
+      "original songs",
+      "coffee house"
+    ],
+    "ticketPrice": "Free (donations appreciated)",
+    "featured": true
+  },
+  {
+    "slug": "rock-revival-tribute-night",
+    "artist": "The Thunder Valley Band",
+    "title": "Rock Revival Tribute Night",
+    "date": "2024-04-05",
+    "location": "Rock City Arena",
+    "description": "A high-energy tribute to classic rock legends with modern twists. Featuring hits from Led Zeppelin, Queen, AC/DC, and more.",
+    "blog": "Rock and roll never dies - it just gets louder! Thunder Valley Band is bringing you the ultimate rock revival experience that will transport you back to the golden age of rock while keeping you firmly planted in the present.\n\nWe're not just playing cover songs; we're reimagining rock classics with our own energy and style. Think Queen's anthems with a modern edge, Led Zeppelin's mystique with contemporary production, and AC/DC's power with today's sonic possibilities.\n\nThis tribute night is our love letter to the artists who defined what rock music could be. These songs shaped generations, and now we get to share that power with a new audience. Whether you lived through the original rock era or you're discovering these classics for the first time, you're in for an unforgettable night.\n\nRock City Arena is the perfect venue for this celebration - big enough for the massive sound these songs deserve, but intimate enough that you'll feel every guitar solo and every thunderous drum beat. Come ready to sing along, air guitar, and remember why rock music will never go out of style.",
+    "instagram": "thundervalleyband",
+    "x": "thundervalleyrock",
+    "genre": "Rock",
+    "tags": [
+      "rock",
+      "tribute",
+      "classic rock",
+      "high energy",
+      "live band",
+      "covers"
+    ],
+    "ticketPrice": "$35",
+    "featured": false
+  },
+  {
+    "slug": "jamming-night",
+    "artist": "Ishan",
+    "title": "Jamming Night",
+    "date": "2025-06-27",
+    "location": "Albany",
+    "description": "Lets meet together and do jamming",
+    "genre": "Rock",
+    "ticketPrice": "Free",
+    "blog": "Feel free to bring your family and friends",
+    "tags": [
+      "music",
+      "weekened"
+    ],
+    "featured": false
+  },
+  {
+    "slug": "musical-friday",
+    "artist": "Ishan",
+    "title": "Musical Friday",
+    "date": "2025-06-27",
+    "location": "Albany",
+    "description": "A band performing Melody",
+    "genre": "Folk",
+    "ticketPrice": "Free",
+    "tags": [
+      "melody",
+      "jazz",
+      "folk"
+    ],
+    "featured": false
+  }
+]

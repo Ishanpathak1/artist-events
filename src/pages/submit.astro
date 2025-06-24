@@ -1,0 +1,512 @@
+---
+// You can handle form POST via Netlify, Supabase, or backend later
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Submit Your Event - Artist Events</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        margin: 0;
+        padding: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        color: #333;
+      }
+
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+      }
+
+      .header {
+        text-align: center;
+        color: white;
+        margin-bottom: 2rem;
+      }
+
+      .header h1 {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+      }
+
+      .header p {
+        opacity: 0.9;
+        font-size: 1.1rem;
+      }
+
+      .back-link {
+        color: white;
+        text-decoration: none;
+        font-weight: 500;
+        margin-bottom: 2rem;
+        display: inline-block;
+        opacity: 0.9;
+      }
+
+      .back-link:hover {
+        opacity: 1;
+        text-decoration: underline;
+      }
+
+      .form-container {
+        background: white;
+        border-radius: 20px;
+        padding: 2rem;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+      }
+
+      .form-section {
+        margin-bottom: 2rem;
+      }
+
+      .section-title {
+        font-size: 1.3rem;
+        font-weight: 600;
+        color: #2c3e50;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #e9ecef;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1rem;
+      }
+
+      .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .form-group.full-width {
+        grid-column: 1 / -1;
+      }
+
+      .form-label {
+        font-weight: 600;
+        color: #2c3e50;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .form-input,
+      .form-select,
+      .form-textarea {
+        padding: 12px 16px;
+        border: 2px solid #e9ecef;
+        border-radius: 8px;
+        font-size: 16px;
+        transition: all 0.3s;
+        font-family: inherit;
+      }
+
+      .form-input:focus,
+      .form-select:focus,
+      .form-textarea:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      .form-textarea {
+        resize: vertical;
+        min-height: 100px;
+      }
+
+      .form-textarea.blog {
+        min-height: 200px;
+      }
+
+      .form-help {
+        font-size: 0.85rem;
+        color: #6c757d;
+        font-style: italic;
+      }
+
+      .tags-input-container {
+        position: relative;
+      }
+
+      .tags-display {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+        min-height: 2rem;
+        padding: 0.5rem;
+        border: 2px dashed #e9ecef;
+        border-radius: 8px;
+        background: #f8f9fa;
+      }
+
+      .tag-item {
+        background: #e3f2fd;
+        color: #1976d2;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .tag-remove {
+        background: none;
+        border: none;
+        color: #1976d2;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 1rem;
+        line-height: 1;
+      }
+
+      .tag-remove:hover {
+        color: #d32f2f;
+      }
+
+      .submit-section {
+        text-align: center;
+        padding-top: 2rem;
+        border-top: 2px solid #e9ecef;
+        margin-top: 2rem;
+      }
+
+      .submit-btn {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        padding: 16px 32px;
+        border-radius: 10px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+      }
+
+      .submit-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+      }
+
+      .submit-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .error-message {
+        color: #dc3545;
+        font-size: 0.85rem;
+        margin-top: 0.25rem;
+      }
+
+      @media (max-width: 768px) {
+        .form-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .header h1 {
+          font-size: 2rem;
+        }
+
+        .container {
+          padding: 0 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <a href="/" class="back-link">← Back to Home</a>
+
+      <div class="header">
+        <h1>Submit Your Event</h1>
+        <p>Share your amazing event with the world and connect with your audience</p>
+      </div>
+
+      <div class="form-container">
+        <form action="/api/save-event" method="POST" id="eventForm">
+          <!-- Basic Event Information -->
+          <div class="form-section">
+            <h2 class="section-title">Event Details</h2>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="title" class="form-label">Event Title *</label>
+                <input 
+                  type="text" 
+                  id="title" 
+                  name="title" 
+                  class="form-input" 
+                  required 
+                  placeholder="e.g., Jazz Night Downtown"
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="genre" class="form-label">Genre *</label>
+                <select id="genre" name="genre" class="form-select" required>
+                  <option value="">Select a genre</option>
+                  <option value="Jazz">Jazz</option>
+                  <option value="Rock">Rock</option>
+                  <option value="Classical">Classical</option>
+                  <option value="Electronic">Electronic</option>
+                  <option value="Hip Hop">Hip Hop</option>
+                  <option value="Folk">Folk</option>
+                  <option value="Blues">Blues</option>
+                  <option value="Country">Country</option>
+                  <option value="Pop">Pop</option>
+                  <option value="R&B">R&B</option>
+                  <option value="Indie">Indie</option>
+                  <option value="Experimental">Experimental</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="date" class="form-label">Event Date *</label>
+                <input 
+                  type="date" 
+                  id="date" 
+                  name="date" 
+                  class="form-input" 
+                  required 
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="ticketPrice" class="form-label">Ticket Price</label>
+                <input 
+                  type="text" 
+                  id="ticketPrice" 
+                  name="ticketPrice" 
+                  class="form-input" 
+                  placeholder="e.g., $25 or Free"
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="location" class="form-label">Venue/Location *</label>
+                <input 
+                  type="text" 
+                  id="location" 
+                  name="location" 
+                  class="form-input" 
+                  required 
+                  placeholder="e.g., Blue Note Cafe"
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="rsvp" class="form-label">RSVP/Ticket Link</label>
+                <input 
+                  type="url" 
+                  id="rsvp" 
+                  name="rsvp" 
+                  class="form-input" 
+                  placeholder="https://example.com/tickets"
+                />
+              </div>
+
+              <div class="form-group full-width">
+                <label for="description" class="form-label">Event Description *</label>
+                <textarea 
+                  id="description" 
+                  name="description" 
+                  class="form-textarea" 
+                  required 
+                  placeholder="Brief description of your event..."
+                ></textarea>
+                <div class="form-help">Keep it concise - this will appear in event listings</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Artist Information -->
+          <div class="form-section">
+            <h2 class="section-title">Artist Information</h2>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="artist" class="form-label">Artist Name *</label>
+                <input 
+                  type="text" 
+                  id="artist" 
+                  name="artist" 
+                  class="form-input" 
+                  required 
+                  placeholder="Your artist/band name"
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="instagram" class="form-label">Instagram Handle</label>
+                <input 
+                  type="text" 
+                  id="instagram" 
+                  name="instagram" 
+                  class="form-input" 
+                  placeholder="@yourusername"
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="x" class="form-label">X (Twitter) Handle</label>
+                <input 
+                  type="text" 
+                  id="x" 
+                  name="x" 
+                  class="form-input" 
+                  placeholder="@yourusername"
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="linkedin" class="form-label">LinkedIn Profile</label>
+                <input 
+                  type="url" 
+                  id="linkedin" 
+                  name="linkedin" 
+                  class="form-input" 
+                  placeholder="https://linkedin.com/in/your-profile"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Blog Content -->
+          <div class="form-section">
+            <h2 class="section-title">Tell Your Story</h2>
+            <div class="form-group">
+              <label for="blog" class="form-label">Event Blog/Story</label>
+              <textarea 
+                id="blog" 
+                name="blog" 
+                class="form-textarea blog" 
+                placeholder="Share the story behind your event, what makes it special, what attendees can expect..."
+              ></textarea>
+              <div class="form-help">This is your chance to connect with your audience! Share your inspiration, the story behind the event, or what makes this performance special.</div>
+            </div>
+          </div>
+
+          <!-- Tags -->
+          <div class="form-section">
+            <h2 class="section-title">Tags & Categories</h2>
+            <div class="form-group">
+              <label for="tagsInput" class="form-label">Tags</label>
+              <input 
+                type="text" 
+                id="tagsInput" 
+                class="form-input" 
+                placeholder="Type a tag and press Enter"
+              />
+              <div class="form-help">Add tags to help people discover your event (e.g., "acoustic", "original music", "intimate venue")</div>
+              <div class="tags-display" id="tagsDisplay">
+                <span style="color: #6c757d; font-style: italic;">No tags added yet</span>
+              </div>
+              <input type="hidden" name="tags" id="tagsHidden" />
+            </div>
+          </div>
+
+          <!-- Submit -->
+          <div class="submit-section">
+            <button type="submit" class="submit-btn" id="submitBtn">
+              🎵 Submit Your Event
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      // Tags functionality
+      let tags = [];
+      const tagsInput = document.getElementById('tagsInput');
+      const tagsDisplay = document.getElementById('tagsDisplay');
+      const tagsHidden = document.getElementById('tagsHidden');
+
+      function updateTagsDisplay() {
+        if (tags.length === 0) {
+          tagsDisplay.innerHTML = '<span style="color: #6c757d; font-style: italic;">No tags added yet</span>';
+        } else {
+          tagsDisplay.innerHTML = tags.map(tag => `
+            <div class="tag-item">
+              ${tag}
+              <button type="button" class="tag-remove" onclick="removeTag('${tag}')">×</button>
+            </div>
+          `).join('');
+        }
+        tagsHidden.value = JSON.stringify(tags);
+      }
+
+      function addTag(tagText) {
+        const tag = tagText.trim().toLowerCase();
+        if (tag && !tags.includes(tag)) {
+          tags.push(tag);
+          updateTagsDisplay();
+        }
+      }
+
+      function removeTag(tagToRemove) {
+        tags = tags.filter(tag => tag !== tagToRemove);
+        updateTagsDisplay();
+      }
+
+      tagsInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          addTag(tagsInput.value);
+          tagsInput.value = '';
+        }
+      });
+
+      tagsInput.addEventListener('blur', () => {
+        if (tagsInput.value.trim()) {
+          addTag(tagsInput.value);
+          tagsInput.value = '';
+        }
+      });
+
+      // Form validation and submission
+      const form = document.getElementById('eventForm');
+      const submitBtn = document.getElementById('submitBtn');
+
+      form.addEventListener('submit', (e) => {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Submitting...';
+      });
+
+      // Set minimum date to today
+      const dateInput = document.getElementById('date');
+      const today = new Date().toISOString().split('T')[0];
+      dateInput.min = today;
+
+      // Initialize tags display
+      updateTagsDisplay();
+
+      // Handle Instagram and X username formatting
+      const instagramInput = document.getElementById('instagram');
+      const xInput = document.getElementById('x');
+
+      instagramInput.addEventListener('input', (e) => {
+        let value = e.target.value;
+        if (value && !value.startsWith('@')) {
+          e.target.value = '@' + value;
+        }
+      });
+
+      xInput.addEventListener('input', (e) => {
+        let value = e.target.value;
+        if (value && !value.startsWith('@')) {
+          e.target.value = '@' + value;
+        }
+      });
+    </script>
+  </body>
+</html>

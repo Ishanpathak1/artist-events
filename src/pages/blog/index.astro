@@ -1,0 +1,534 @@
+---
+import blogs from '../../../data/blogs.json';
+
+// Sort blogs by date (newest first)
+const sortedBlogs = blogs.sort((a, b) => new Date(b.publishedDate) - new Date(a.publishedDate));
+const featuredBlogs = sortedBlogs.filter(blog => blog.featured);
+const regularBlogs = sortedBlogs.filter(blog => !blog.featured);
+
+// Get unique categories for filter
+const categories = [...new Set(blogs.map(blog => blog.category))];
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Artist Blog - Stories from the Music World</title>
+    <meta name="description" content="Discover insights, stories, and wisdom from artists around the world. A Medium-style platform for the music community." />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        line-height: 1.6;
+        color: #1a1a1a;
+        background: #fafafa;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+
+      /* Header */
+      .header {
+        background: white;
+        padding: 1rem 0;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        position: sticky;
+        top: 0;
+        z-index: 100;
+      }
+
+      .nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .logo {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #1a1a1a;
+        text-decoration: none;
+      }
+
+      .nav-links {
+        display: flex;
+        gap: 2rem;
+        list-style: none;
+      }
+
+      .nav-links a {
+        color: #666;
+        text-decoration: none;
+        font-weight: 500;
+        transition: color 0.3s;
+      }
+
+      .nav-links a:hover,
+      .nav-links a.active {
+        color: #1a1a1a;
+      }
+
+      /* Hero Section */
+      .hero {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 4rem 0;
+        text-align: center;
+      }
+
+      .hero h1 {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        font-weight: 700;
+      }
+
+      .hero p {
+        font-size: 1.2rem;
+        opacity: 0.9;
+        max-width: 600px;
+        margin: 0 auto 2rem;
+      }
+
+      .cta-button {
+        display: inline-block;
+        background: rgba(255,255,255,0.15);
+        color: white;
+        padding: 12px 24px;
+        border-radius: 30px;
+        text-decoration: none;
+        font-weight: 600;
+        border: 2px solid rgba(255,255,255,0.3);
+        transition: all 0.3s;
+      }
+
+      .cta-button:hover {
+        background: white;
+        color: #667eea;
+        border-color: white;
+      }
+
+      /* Content */
+      .content {
+        padding: 3rem 0;
+      }
+
+      .section-title {
+        font-size: 2rem;
+        margin-bottom: 2rem;
+        text-align: center;
+        color: #1a1a1a;
+      }
+
+      /* Categories Filter */
+      .categories-filter {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-bottom: 3rem;
+      }
+
+      .category-btn {
+        background: white;
+        color: #666;
+        padding: 8px 16px;
+        border: 1px solid #e1e5e9;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: all 0.3s;
+        text-decoration: none;
+      }
+
+      .category-btn:hover,
+      .category-btn.active {
+        background: #667eea;
+        color: white;
+        border-color: #667eea;
+      }
+
+      /* Featured Blogs */
+      .featured-section {
+        margin-bottom: 4rem;
+      }
+
+      .featured-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        gap: 2rem;
+        margin-bottom: 2rem;
+      }
+
+      .featured-card {
+        background: white;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        transition: all 0.3s;
+        text-decoration: none;
+        color: inherit;
+      }
+
+      .featured-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+      }
+
+      .featured-badge {
+        background: #ff6b6b;
+        color: white;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        z-index: 2;
+      }
+
+      .card-content {
+        padding: 2rem;
+        position: relative;
+      }
+
+      .card-category {
+        color: #667eea;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.5rem;
+      }
+
+      .card-title {
+        font-size: 1.4rem;
+        font-weight: 700;
+        line-height: 1.3;
+        margin-bottom: 0.75rem;
+        color: #1a1a1a;
+      }
+
+      .card-excerpt {
+        color: #666;
+        font-size: 1rem;
+        line-height: 1.6;
+        margin-bottom: 1.5rem;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .card-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+      }
+
+      .author-info {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      .author-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+        font-size: 0.9rem;
+      }
+
+      .author-details {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .author-name {
+        font-weight: 600;
+        color: #1a1a1a;
+        font-size: 0.9rem;
+      }
+
+      .publish-date {
+        color: #999;
+        font-size: 0.8rem;
+      }
+
+      .read-time {
+        color: #999;
+        font-size: 0.85rem;
+      }
+
+      .card-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      .tag {
+        background: #f0f0f0;
+        color: #666;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 500;
+      }
+
+      /* Regular Blogs Grid */
+      .blogs-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 2rem;
+      }
+
+      .blog-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        transition: all 0.3s;
+        text-decoration: none;
+        color: inherit;
+        border: 1px solid #f0f0f0;
+      }
+
+      .blog-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+      }
+
+      .engagement {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid #f0f0f0;
+        font-size: 0.85rem;
+        color: #999;
+      }
+
+      .engagement span {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+      }
+
+      /* No results */
+      .no-results {
+        text-align: center;
+        padding: 4rem 2rem;
+        background: white;
+        border-radius: 12px;
+        margin: 2rem 0;
+      }
+
+      .no-results h3 {
+        color: #666;
+        margin-bottom: 1rem;
+      }
+
+      /* Responsive */
+      @media (max-width: 768px) {
+        .hero h1 {
+          font-size: 2rem;
+        }
+
+        .featured-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .blogs-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .nav-links {
+          gap: 1rem;
+        }
+
+        .categories-filter {
+          gap: 0.5rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Header -->
+    <header class="header">
+      <nav class="nav container">
+        <a href="/" class="logo">🎵 Artist Events</a>
+        <ul class="nav-links">
+          <li><a href="/">Home</a></li>
+          <li><a href="/events">Events</a></li>
+          <li><a href="/blog" class="active">Blog</a></li>
+          <li><a href="/blog/submit">Write</a></li>
+          <li><a href="/search">Search</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="container">
+        <h1>Artist Stories</h1>
+        <p>Discover insights, wisdom, and stories from artists around the world. A place where creativity meets community.</p>
+        <a href="/blog/submit" class="cta-button">Share Your Story</a>
+      </div>
+    </section>
+
+    <!-- Main Content -->
+    <main class="content">
+      <div class="container">
+        <!-- Categories Filter -->
+        <div class="categories-filter">
+          <button class="category-btn active" data-category="all">All Stories</button>
+          {categories.map(category => (
+            <button class="category-btn" data-category={category}>{category}</button>
+          ))}
+        </div>
+
+        <!-- Featured Blogs -->
+        {featuredBlogs.length > 0 && (
+          <section class="featured-section">
+            <h2 class="section-title">Featured Stories</h2>
+            <div class="featured-grid">
+              {featuredBlogs.map(blog => (
+                <a href={`/blog/${blog.slug}`} class="featured-card" data-category={blog.category}>
+                  <div class="card-content">
+                    <div class="featured-badge">Featured</div>
+                    <div class="card-category">{blog.category}</div>
+                    <h3 class="card-title">{blog.title}</h3>
+                    <p class="card-excerpt">{blog.excerpt}</p>
+                    <div class="card-meta">
+                      <div class="author-info">
+                        <div class="author-avatar">
+                          {blog.author.split(' ').map(name => name[0]).join('')}
+                        </div>
+                        <div class="author-details">
+                          <div class="author-name">{blog.author}</div>
+                          <div class="publish-date">
+                            {new Date(blog.publishedDate).toLocaleDateString('en-US', { 
+                              year: 'numeric', 
+                              month: 'long', 
+                              day: 'numeric' 
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                      <div class="read-time">{blog.readTime}</div>
+                    </div>
+                    <div class="card-tags">
+                      {blog.tags.slice(0, 3).map(tag => (
+                        <span class="tag">{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <!-- All Blogs -->
+        <section>
+          <h2 class="section-title">Latest Stories</h2>
+          <div class="blogs-grid" id="blogsGrid">
+            {regularBlogs.map(blog => (
+              <a href={`/blog/${blog.slug}`} class="blog-card" data-category={blog.category}>
+                <div class="card-category">{blog.category}</div>
+                <h3 class="card-title">{blog.title}</h3>
+                <p class="card-excerpt">{blog.excerpt}</p>
+                <div class="card-meta">
+                  <div class="author-info">
+                    <div class="author-avatar">
+                      {blog.author.split(' ').map(name => name[0]).join('')}
+                    </div>
+                    <div class="author-details">
+                      <div class="author-name">{blog.author}</div>
+                      <div class="publish-date">
+                        {new Date(blog.publishedDate).toLocaleDateString('en-US', { 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                  <div class="read-time">{blog.readTime}</div>
+                </div>
+                <div class="card-tags">
+                  {blog.tags.slice(0, 4).map(tag => (
+                    <span class="tag">{tag}</span>
+                  ))}
+                </div>
+                <div class="engagement">
+                  <span>❤️ {blog.likes}</span>
+                  <span>💬 {blog.comments}</span>
+                </div>
+              </a>
+            ))}
+          </div>
+
+          <div class="no-results" id="noResults" style="display: none;">
+            <h3>No stories found in this category</h3>
+            <p>Try selecting a different category or check back later for new content.</p>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      // Category filtering
+      const categoryButtons = document.querySelectorAll('.category-btn');
+      const blogCards = document.querySelectorAll('[data-category]');
+      const noResults = document.getElementById('noResults');
+      const blogsGrid = document.getElementById('blogsGrid');
+
+      categoryButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          const category = button.dataset.category;
+          
+          // Update active button
+          categoryButtons.forEach(btn => btn.classList.remove('active'));
+          button.classList.add('active');
+          
+          // Filter cards
+          let visibleCount = 0;
+          blogCards.forEach(card => {
+            if (category === 'all' || card.dataset.category === category) {
+              card.style.display = 'block';
+              visibleCount++;
+            } else {
+              card.style.display = 'none';
+            }
+          });
+          
+          // Show/hide no results message
+          if (visibleCount === 0) {
+            blogsGrid.style.display = 'none';
+            noResults.style.display = 'block';
+          } else {
+            blogsGrid.style.display = 'grid';
+            noResults.style.display = 'none';
+          }
+        });
+      });
+    </script>
+  </body>
+</html> 
