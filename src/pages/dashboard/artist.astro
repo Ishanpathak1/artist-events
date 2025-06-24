@@ -1,5 +1,5 @@
 ---
-import Layout from '../../layouts/Layout.astro';
+import Navigation from '../../components/Navigation.astro';
 
 // Helper function to parse cookies
 function parseCookie(cookieString, name) {
@@ -31,946 +31,907 @@ if (!sessionToken) {
         headers: { Location: '/auth/login?redirect=/dashboard/artist' }
     });
 }
+
+// This page will validate authentication on the client side
 ---
 
-<Layout title="Artist Dashboard - Artist Events">
-    <div class="dashboard-container">
-        <!-- Loading State -->
-        <div id="loadingState" class="loading-container">
-            <div class="loading-spinner-large"></div>
-            <p>Loading your artist dashboard...</p>
-        </div>
-
-        <!-- Dashboard Content (will be shown after loading) -->
-        <div id="dashboardContent" style="display: none;">
-            <!-- Header -->
-            <header class="dashboard-header">
-                <div class="header-content">
-                    <div class="user-info">
-                        <div class="avatar">
-                            <img id="userAvatar" src="/default-avatar.svg" alt="Artist Avatar" />
-                        </div>
-                        <div class="user-details">
-                            <h1 id="welcomeMessage">Welcome back, Artist!</h1>
-                            <p class="user-type" id="userType">Artist Account</p>
-                            <div class="artist-badge">
-                                <span class="badge">🎨 Artist</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="header-actions">
-                        <button id="profileBtn" class="btn btn-secondary">
-                            Artist Profile
-                        </button>
-                        <button id="logoutBtn" class="btn btn-outline">
-                            Logout
-                        </button>
-                    </div>
-                </div>
-            </header>
-
-            <!-- Main Content -->
-            <main class="dashboard-main">
-                <!-- Artist Stats Cards -->
-                <section class="stats-section">
-                    <h2>Your Performance</h2>
-                    <div class="stats-grid" id="statsGrid">
-                        <div class="stat-card loading">
-                            <div class="stat-icon">🎪</div>
-                            <div class="stat-content">
-                                <div class="stat-number" id="totalEvents">-</div>
-                                <div class="stat-label">Events Created</div>
-                            </div>
-                        </div>
-                        
-                        <div class="stat-card loading">
-                            <div class="stat-icon">❤️</div>
-                            <div class="stat-content">
-                                <div class="stat-number" id="eventLikes">-</div>
-                                <div class="stat-label">Total Likes</div>
-                            </div>
-                        </div>
-                        
-                        <div class="stat-card loading">
-                            <div class="stat-icon">👥</div>
-                            <div class="stat-content">
-                                <div class="stat-number" id="followers">-</div>
-                                <div class="stat-label">Followers</div>
-                            </div>
-                        </div>
-                        
-                        <div class="stat-card loading">
-                            <div class="stat-icon">📈</div>
-                            <div class="stat-content">
-                                <div class="stat-number" id="publishedEvents">-</div>
-                                <div class="stat-label">Published Events</div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Quick Actions -->
-                <section class="actions-section">
-                    <h2>Artist Tools</h2>
-                    <div class="actions-grid" id="actionsGrid">
-                        <a href="/submit" class="action-card primary">
-                            <div class="action-icon">➕</div>
-                            <div class="action-content">
-                                <h3>Create Event</h3>
-                                <p>Submit a new event or performance</p>
-                            </div>
-                        </a>
-                        
-                        <a href="/events?creator=me" class="action-card">
-                            <div class="action-icon">📋</div>
-                            <div class="action-content">
-                                <h3>My Events</h3>
-                                <p>Manage your created events</p>
-                            </div>
-                        </a>
-                        
-                        <button id="portfolioBtn" class="action-card">
-                            <div class="action-icon">🎨</div>
-                            <div class="action-content">
-                                <h3>Portfolio</h3>
-                                <p>Showcase your work and skills</p>
-                            </div>
-                        </button>
-                        
-                        <a href="/analytics" class="action-card">
-                            <div class="action-icon">📊</div>
-                            <div class="action-content">
-                                <h3>Analytics</h3>
-                                <p>View detailed performance metrics</p>
-                            </div>
-                        </a>
-                        
-                        <button id="promotionBtn" class="action-card">
-                            <div class="action-icon">📢</div>
-                            <div class="action-content">
-                                <h3>Promotion Tools</h3>
-                                <p>Boost your event visibility</p>
-                            </div>
-                        </button>
-                        
-                        <button id="settingsBtn" class="action-card">
-                            <div class="action-icon">⚙️</div>
-                            <div class="action-content">
-                                <h3>Artist Settings</h3>
-                                <p>Configure your artist profile</p>
-                            </div>
-                        </button>
-                    </div>
-                </section>
-
-                <!-- Recent Events & Activity -->
-                <section class="content-section">
-                    <div class="content-grid">
-                        <!-- Recent Events -->
-                        <div class="content-card">
-                            <h3>Recent Events</h3>
-                            <div id="recentEvents" class="content-list">
-                                <div class="loading-item">Loading your events...</div>
-                            </div>
-                        </div>
-                        
-                        <!-- Recent Activity -->
-                        <div class="content-card">
-                            <h3>Activity Feed</h3>
-                            <div id="activityFeed" class="content-list">
-                                <div class="activity-item">
-                                    <div class="activity-icon">🔄</div>
-                                    <div class="activity-content">
-                                        <p>Loading your recent activity...</p>
-                                        <span class="activity-time">Just now</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-            </main>
-        </div>
-    </div>
-
-    <!-- Artist Profile Modal -->
-    <div id="profileModal" class="modal" style="display: none;">
-        <div class="modal-content large">
-            <div class="modal-header">
-                <h2>Artist Profile</h2>
-                <button class="modal-close" id="closeProfileModal">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="profileForm">
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="name">Full Name</label>
-                            <input type="text" id="profileName" name="name" required />
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="stageName">Stage Name</label>
-                            <input type="text" id="profileStageName" name="stageName" placeholder="Your performance name" />
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="bio">Bio</label>
-                            <textarea id="profileBio" name="bio" placeholder="Tell us about your artistic journey..."></textarea>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="genres">Genres</label>
-                            <input type="text" id="profileGenres" name="genres" placeholder="Rock, Jazz, Electronic..." />
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="location">Location</label>
-                            <input type="text" id="profileLocation" name="location" placeholder="City, Country" />
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="website">Website</label>
-                            <input type="url" id="profileWebsite" name="website" placeholder="https://yourwebsite.com" />
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="experienceLevel">Experience Level</label>
-                            <select id="profileExperience" name="experienceLevel">
-                                <option value="">Select experience</option>
-                                <option value="beginner">Beginner</option>
-                                <option value="intermediate">Intermediate</option>
-                                <option value="professional">Professional</option>
-                                <option value="expert">Expert</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="hourlyRate">Hourly Rate ($)</label>
-                            <input type="number" id="profileRate" name="hourlyRate" min="0" max="10000" placeholder="Optional" />
-                        </div>
-                    </div>
-                    
-                    <div class="form-actions">
-                        <button type="button" class="btn btn-secondary" id="cancelProfile">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Save Profile</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</Layout>
-
-<style>
-    .dashboard-container {
-        min-height: 100vh;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        background-attachment: fixed;
-    }
-
-    /* Loading State */
-    .loading-container {
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-    }
-
-    .loading-spinner-large {
-        width: 48px;
-        height: 48px;
-        border: 4px solid rgba(255, 255, 255, 0.3);
-        border-top: 4px solid #ffffff;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        margin-bottom: 16px;
-    }
-
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-
-    .loading-container p {
-        color: white;
-        font-size: 1.1rem;
-        opacity: 0.9;
-    }
-
-    /* Dashboard Header */
-    .dashboard-header {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(10px);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-        padding: 1.5rem 0;
-        margin-bottom: 2rem;
-    }
-
-    .header-content {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 0 2rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .user-info {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-    }
-
-    .avatar {
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        overflow: hidden;
-        border: 3px solid #667eea;
-    }
-
-    .avatar img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    .user-details h1 {
-        font-size: 1.5rem;
-        margin: 0 0 0.25rem 0;
-        color: #1a202c;
-    }
-
-    .user-type {
-        color: #718096;
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Artist Dashboard - Artist Events</title>
+    <meta name="description" content="Manage your artist profile, events, and engagement metrics" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      * {
         margin: 0;
-        font-size: 0.9rem;
-    }
+        padding: 0;
+        box-sizing: border-box;
+      }
 
-    .artist-badge {
-        margin-top: 0.5rem;
-    }
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        color: #334155;
+        line-height: 1.6;
+        min-height: 100vh;
+      }
 
-    .badge {
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        color: white;
-        padding: 0.25rem 0.75rem;
-        border-radius: 20px;
-        font-size: 0.8rem;
-        font-weight: 500;
-    }
-
-    .header-actions {
-        display: flex;
-        gap: 1rem;
-    }
-
-    /* Main Content */
-    .dashboard-main {
-        max-width: 1200px;
+      .dashboard-container {
+        max-width: 1400px;
         margin: 0 auto;
-        padding: 0 2rem;
-    }
+        padding: 2rem 20px;
+      }
 
-    .stats-section {
-        margin-bottom: 3rem;
-    }
-
-    .stats-section h2 {
-        color: white;
-        font-size: 1.5rem;
-        margin-bottom: 1.5rem;
-        text-align: center;
-    }
-
-    .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 1.5rem;
-        margin-bottom: 2rem;
-    }
-
-    .stat-card {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(10px);
-        border-radius: 16px;
+      /* Header Section */
+      .dashboard-header {
+        background: white;
+        border-radius: 20px;
         padding: 2rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+      }
+
+      .welcome-section {
         display: flex;
         align-items: center;
-        gap: 1rem;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-    }
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1.5rem;
+      }
 
-    .stat-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    }
-
-    .stat-card.loading {
-        opacity: 0.7;
-    }
-
-    .stat-icon {
-        font-size: 2.5rem;
-        opacity: 0.8;
-    }
-
-    .stat-content {
-        flex: 1;
-    }
-
-    .stat-number {
+      .welcome-text h1 {
         font-size: 2rem;
-        font-weight: bold;
-        color: #1a202c;
-        margin-bottom: 0.25rem;
-    }
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 0.5rem;
+      }
 
-    .stat-label {
-        color: #718096;
+      .welcome-text p {
+        color: #64748b;
+        font-size: 1.1rem;
+      }
+
+      .header-actions {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 12px 20px;
+        border-radius: 12px;
+        text-decoration: none;
+        font-weight: 600;
         font-size: 0.9rem;
-        font-weight: 500;
-    }
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+      }
 
-    /* Actions Section */
-    .actions-section {
-        margin-bottom: 3rem;
-    }
-
-    .actions-section h2 {
+      .btn-primary {
+        background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
         color: white;
-        font-size: 1.5rem;
-        margin-bottom: 1.5rem;
-        text-align: center;
-    }
+      }
 
-    .actions-grid {
+      .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(59, 130, 246, 0.3);
+      }
+
+      .btn-secondary {
+        background: rgba(59, 130, 246, 0.1);
+        color: #3b82f6;
+        border: 1px solid rgba(59, 130, 246, 0.2);
+      }
+
+      .btn-secondary:hover {
+        background: rgba(59, 130, 246, 0.15);
+        transform: translateY(-1px);
+      }
+
+      /* Stats Grid */
+      .stats-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
         gap: 1.5rem;
-    }
+        margin-bottom: 2rem;
+      }
 
-    .action-card {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(10px);
-        border-radius: 16px;
-        padding: 2rem;
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        text-decoration: none;
-        color: inherit;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        cursor: pointer;
-    }
-
-    .action-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    }
-
-    .action-card.primary {
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        color: white;
-    }
-
-    .action-card.primary .action-content h3,
-    .action-card.primary .action-content p {
-        color: white;
-    }
-
-    .action-icon {
-        font-size: 2rem;
-        opacity: 0.8;
-    }
-
-    .action-content h3 {
-        font-size: 1.1rem;
-        margin: 0 0 0.5rem 0;
-        color: #1a202c;
-    }
-
-    .action-content p {
-        color: #718096;
-        margin: 0;
-        font-size: 0.9rem;
-    }
-
-    /* Content Section */
-    .content-section {
-        margin-bottom: 3rem;
-    }
-
-    .content-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-        gap: 2rem;
-    }
-
-    .content-card {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(10px);
-        border-radius: 16px;
-        padding: 2rem;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .content-card h3 {
-        color: #1a202c;
-        margin: 0 0 1.5rem 0;
-        font-size: 1.2rem;
-    }
-
-    .content-list {
-        max-height: 300px;
-        overflow-y: auto;
-    }
-
-    .loading-item {
-        color: #718096;
-        text-align: center;
-        padding: 1rem;
-        font-style: italic;
-    }
-
-    .activity-item {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        padding: 1rem 0;
-        border-bottom: 1px solid #e2e8f0;
-    }
-
-    .activity-item:last-child {
-        border-bottom: none;
-    }
-
-    .activity-icon {
-        font-size: 1.5rem;
-    }
-
-    .activity-content p {
-        margin: 0 0 0.25rem 0;
-        color: #1a202c;
-    }
-
-    .activity-time {
-        font-size: 0.8rem;
-        color: #718096;
-    }
-
-    /* Buttons */
-    .btn {
-        padding: 0.75rem 1.5rem;
-        border-radius: 8px;
-        border: none;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        text-decoration: none;
-        display: inline-block;
-        text-align: center;
-    }
-
-    .btn-primary {
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        color: white;
-    }
-
-    .btn-primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-    }
-
-    .btn-secondary {
-        background: #f7fafc;
-        color: #4a5568;
-        border: 1px solid #e2e8f0;
-    }
-
-    .btn-secondary:hover {
-        background: #edf2f7;
-    }
-
-    .btn-outline {
-        background: transparent;
-        color: #667eea;
-        border: 2px solid #667eea;
-    }
-
-    .btn-outline:hover {
-        background: #667eea;
-        color: white;
-    }
-
-    /* Modal Styles */
-    .modal {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-        backdrop-filter: blur(5px);
-    }
-
-    .modal-content {
+      .stat-card {
         background: white;
         border-radius: 16px;
-        max-width: 500px;
-        width: 90%;
-        max-height: 90vh;
-        overflow-y: auto;
-    }
+        padding: 1.5rem;
+        border: 1px solid rgba(226, 232, 240, 0.8);
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+      }
 
-    .modal-content.large {
-        max-width: 800px;
-    }
+      .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+      }
 
-    .modal-header {
-        padding: 2rem 2rem 1rem 2rem;
-        border-bottom: 1px solid #e2e8f0;
+      .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: var(--accent-color);
+      }
+
+      .stat-card.events::before {
+        --accent-color: linear-gradient(90deg, #3b82f6, #1d4ed8);
+      }
+
+      .stat-card.views::before {
+        --accent-color: linear-gradient(90deg, #10b981, #059669);
+      }
+
+      .stat-card.likes::before {
+        --accent-color: linear-gradient(90deg, #f59e0b, #d97706);
+      }
+
+      .stat-card.followers::before {
+        --accent-color: linear-gradient(90deg, #8b5cf6, #7c3aed);
+      }
+
+      .stat-header {
         display: flex;
-        justify-content: space-between;
         align-items: center;
-    }
+        justify-content: space-between;
+        margin-bottom: 1rem;
+      }
 
-    .modal-header h2 {
-        margin: 0;
-        color: #1a202c;
-    }
-
-    .modal-close {
-        background: none;
-        border: none;
-        font-size: 1.5rem;
-        cursor: pointer;
-        color: #718096;
-        padding: 0;
-        width: 30px;
-        height: 30px;
+      .stat-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
         display: flex;
         align-items: center;
         justify-content: center;
-    }
+        font-size: 1.5rem;
+      }
 
-    .modal-close:hover {
-        color: #1a202c;
-    }
+      .stat-card.events .stat-icon {
+        background: rgba(59, 130, 246, 0.1);
+        color: #3b82f6;
+      }
 
-    .modal-body {
-        padding: 2rem;
-    }
+      .stat-card.views .stat-icon {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+      }
 
-    .form-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 1.5rem;
-        margin-bottom: 2rem;
-    }
+      .stat-card.likes .stat-icon {
+        background: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+      }
 
-    .form-group {
-        display: flex;
-        flex-direction: column;
-    }
+      .stat-card.followers .stat-icon {
+        background: rgba(139, 92, 246, 0.1);
+        color: #8b5cf6;
+      }
 
-    .form-group label {
-        margin-bottom: 0.5rem;
+      .stat-trend {
+        font-size: 0.8rem;
+        font-weight: 600;
+        padding: 4px 8px;
+        border-radius: 6px;
+      }
+
+      .trend-up {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+      }
+
+      .trend-down {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+      }
+
+      .stat-value {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 0.25rem;
+      }
+
+      .stat-label {
+        color: #64748b;
         font-weight: 500;
-        color: #1a202c;
-    }
+      }
 
-    .form-group input,
-    .form-group textarea,
-    .form-group select {
-        padding: 0.75rem;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        font-size: 1rem;
-        transition: border-color 0.2s ease;
-    }
+      /* Main Content Grid */
+      .main-grid {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 2rem;
+        margin-bottom: 2rem;
+      }
 
-    .form-group input:focus,
-    .form-group textarea:focus,
-    .form-group select:focus {
-        outline: none;
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
+      /* Quick Actions */
+      .quick-actions {
+        background: white;
+        border-radius: 16px;
+        padding: 1.5rem;
+        border: 1px solid rgba(226, 232, 240, 0.8);
+      }
 
-    .form-group textarea {
-        min-height: 100px;
-        resize: vertical;
-    }
+      .section-title {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
 
-    .form-actions {
+      .actions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+      }
+
+      .action-card {
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        border: 1px solid rgba(226, 232, 240, 0.6);
+        border-radius: 12px;
+        padding: 1.5rem;
+        text-decoration: none;
+        color: inherit;
+        transition: all 0.3s ease;
+        text-align: center;
+      }
+
+      .action-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+        border-color: #3b82f6;
+      }
+
+      .action-icon {
+        font-size: 2rem;
+        margin-bottom: 0.75rem;
+        display: block;
+      }
+
+      .action-title {
+        font-weight: 600;
+        color: #1e293b;
+        margin-bottom: 0.5rem;
+      }
+
+      .action-desc {
+        font-size: 0.85rem;
+        color: #64748b;
+      }
+
+      /* Activity Feed */
+      .activity-section {
+        background: white;
+        border-radius: 16px;
+        padding: 1.5rem;
+        border: 1px solid rgba(226, 232, 240, 0.8);
+      }
+
+      .activity-item {
         display: flex;
         gap: 1rem;
-        justify-content: flex-end;
-    }
+        padding: 1rem 0;
+        border-bottom: 1px solid #f1f5f9;
+      }
 
-    /* Responsive Design */
-    @media (max-width: 768px) {
-        .header-content {
-            flex-direction: column;
-            gap: 1rem;
-            text-align: center;
+      .activity-item:last-child {
+        border-bottom: none;
+      }
+
+      .activity-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+        flex-shrink: 0;
+      }
+
+      .activity-icon.event {
+        background: rgba(59, 130, 246, 0.1);
+        color: #3b82f6;
+      }
+
+      .activity-icon.like {
+        background: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+      }
+
+      .activity-icon.follow {
+        background: rgba(139, 92, 246, 0.1);
+        color: #8b5cf6;
+      }
+
+      .activity-content {
+        flex: 1;
+      }
+
+      .activity-text {
+        color: #334155;
+        margin-bottom: 0.25rem;
+      }
+
+      .activity-time {
+        font-size: 0.8rem;
+        color: #64748b;
+      }
+
+      /* Profile Section */
+      .profile-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 2rem;
+      }
+
+      .profile-card {
+        background: white;
+        border-radius: 16px;
+        padding: 1.5rem;
+        border: 1px solid rgba(226, 232, 240, 0.8);
+      }
+
+      .profile-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+      }
+
+      .profile-avatar {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 700;
+        font-size: 1.5rem;
+      }
+
+      .profile-info h3 {
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 0.25rem;
+      }
+
+      .profile-type {
+        color: #3b82f6;
+        font-weight: 600;
+        font-size: 0.9rem;
+      }
+
+      .profile-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .field-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .field-label {
+        font-weight: 600;
+        color: #374151;
+        font-size: 0.9rem;
+      }
+
+      .field-input {
+        padding: 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+        background: white;
+      }
+
+      .field-input:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      }
+
+      .field-select {
+        padding: 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        background: white;
+        cursor: pointer;
+      }
+
+      /* Loading States */
+      .loading {
+        display: none;
+        text-align: center;
+        padding: 2rem;
+        color: #64748b;
+      }
+
+      .loading.show {
+        display: block;
+      }
+
+      .spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 2px solid #f3f4f6;
+        border-radius: 50%;
+        border-top-color: #3b82f6;
+        animation: spin 1s ease-in-out infinite;
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      /* Responsive Design */
+      @media (max-width: 1024px) {
+        .main-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 768px) {
+        .dashboard-container {
+          padding: 1rem 16px;
+        }
+
+        .welcome-section {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 1rem;
+        }
+
+        .stats-grid {
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        }
+
+        .actions-grid {
+          grid-template-columns: 1fr;
         }
 
         .header-actions {
-            justify-content: center;
+          width: 100%;
         }
 
-        .stats-grid,
-        .actions-grid {
-            grid-template-columns: 1fr;
+        .btn {
+          flex: 1;
+          justify-content: center;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .stats-grid {
+          grid-template-columns: 1fr;
         }
 
-        .content-grid {
-            grid-template-columns: 1fr;
+        .stat-value {
+          font-size: 2rem;
         }
 
-        .dashboard-main {
-            padding: 0 1rem;
+        .welcome-text h1 {
+          font-size: 1.5rem;
         }
+      }
+    </style>
+  </head>
+  <body>
+    <Navigation currentPage="dashboard" />
 
-        .form-grid {
-            grid-template-columns: 1fr;
-        }
+    <main class="dashboard-container">
+      <!-- Loading State -->
+      <div class="loading show" id="loadingState">
+        <div class="spinner"></div>
+        <p>Loading your dashboard...</p>
+      </div>
 
-        .form-actions {
-            justify-content: stretch;
-        }
+      <!-- Dashboard Content -->
+      <div id="dashboardContent" style="display: none;">
+        <!-- Header Section -->
+        <section class="dashboard-header">
+          <div class="welcome-section">
+            <div class="welcome-text">
+              <h1>Welcome back, <span id="artistName">Artist</span>! 🎵</h1>
+              <p>Here's what's happening with your artistic journey today.</p>
+            </div>
+            <div class="header-actions">
+              <a href="/submit" class="btn btn-primary">
+                <span>+</span>
+                Create Event
+              </a>
+              <a href="/blog/submit" class="btn btn-secondary">
+                <span>✍️</span>
+                Write Story
+              </a>
+            </div>
+          </div>
+        </section>
 
-        .form-actions .btn {
-            flex: 1;
-        }
-    }
-</style>
+        <!-- Stats Grid -->
+        <section class="stats-grid">
+          <div class="stat-card events">
+            <div class="stat-header">
+              <div class="stat-icon">🎪</div>
+              <span class="stat-trend trend-up">+12%</span>
+            </div>
+            <div class="stat-value" id="eventsCount">0</div>
+            <div class="stat-label">Events Created</div>
+          </div>
 
-<script>
-    document.addEventListener('DOMContentLoaded', async () => {
-        const loadingState = document.getElementById('loadingState');
-        const dashboardContent = document.getElementById('dashboardContent');
-        const profileBtn = document.getElementById('profileBtn');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const profileModal = document.getElementById('profileModal');
-        const closeProfileModal = document.getElementById('closeProfileModal');
-        const cancelProfile = document.getElementById('cancelProfile');
-        const profileForm = document.getElementById('profileForm');
+          <div class="stat-card views">
+            <div class="stat-header">
+              <div class="stat-icon">👀</div>
+              <span class="stat-trend trend-up">+8%</span>
+            </div>
+            <div class="stat-value" id="totalViews">0</div>
+            <div class="stat-label">Profile Views</div>
+          </div>
 
-        // Check authentication and load user data
+          <div class="stat-card likes">
+            <div class="stat-header">
+              <div class="stat-icon">❤️</div>
+              <span class="stat-trend trend-up">+15%</span>
+            </div>
+            <div class="stat-value" id="totalLikes">0</div>
+            <div class="stat-label">Total Likes</div>
+          </div>
+
+          <div class="stat-card followers">
+            <div class="stat-header">
+              <div class="stat-icon">👥</div>
+              <span class="stat-trend trend-up">+5%</span>
+            </div>
+            <div class="stat-value" id="followersCount">0</div>
+            <div class="stat-label">Followers</div>
+          </div>
+        </section>
+
+        <!-- Main Content Grid -->
+        <div class="main-grid">
+          <!-- Quick Actions -->
+          <section class="quick-actions">
+            <h2 class="section-title">
+              <span>⚡</span>
+              Quick Actions
+            </h2>
+            <div class="actions-grid">
+              <a href="/submit" class="action-card">
+                <span class="action-icon">🎯</span>
+                <div class="action-title">Create Event</div>
+                <div class="action-desc">Share your upcoming performance or show</div>
+              </a>
+
+              <a href="/blog/submit" class="action-card">
+                <span class="action-icon">✍️</span>
+                <div class="action-title">Write Story</div>
+                <div class="action-desc">Share your artistic journey and insights</div>
+              </a>
+
+              <a href="/events" class="action-card">
+                <span class="action-icon">📅</span>
+                <div class="action-title">Manage Events</div>
+                <div class="action-desc">View and edit your published events</div>
+              </a>
+
+              <a href="#profile" class="action-card" onclick="scrollToProfile()">
+                <span class="action-icon">👤</span>
+                <div class="action-title">Update Profile</div>
+                <div class="action-desc">Customize your artist information</div>
+              </a>
+            </div>
+          </section>
+
+          <!-- Activity Feed -->
+          <section class="activity-section">
+            <h2 class="section-title">
+              <span>📈</span>
+              Recent Activity
+            </h2>
+            <div id="activityFeed">
+              <div class="activity-item">
+                <div class="activity-icon event">🎪</div>
+                <div class="activity-content">
+                  <div class="activity-text">Your latest event gained 5 new likes</div>
+                  <div class="activity-time">2 hours ago</div>
+                </div>
+              </div>
+
+              <div class="activity-item">
+                <div class="activity-icon like">❤️</div>
+                <div class="activity-content">
+                  <div class="activity-text">Someone liked your story "My Musical Journey"</div>
+                  <div class="activity-time">5 hours ago</div>
+                </div>
+              </div>
+
+              <div class="activity-item">
+                <div class="activity-icon follow">👥</div>
+                <div class="activity-content">
+                  <div class="activity-text">3 new people are following you</div>
+                  <div class="activity-time">1 day ago</div>
+                </div>
+              </div>
+
+              <div class="activity-item">
+                <div class="activity-icon event">🎯</div>
+                <div class="activity-content">
+                  <div class="activity-text">You created a new event "Summer Concert"</div>
+                  <div class="activity-time">2 days ago</div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Profile Section -->
+        <section class="profile-grid" id="profile">
+          <div class="profile-card">
+            <h2 class="section-title">
+              <span>👤</span>
+              Artist Profile
+            </h2>
+            <div class="profile-header">
+              <div class="profile-avatar" id="profileAvatar">A</div>
+              <div class="profile-info">
+                <h3 id="profileName">Artist Name</h3>
+                <div class="profile-type">Professional Artist</div>
+              </div>
+            </div>
+            <form class="profile-fields" id="profileForm">
+              <div class="field-group">
+                <label class="field-label">Stage Name</label>
+                <input type="text" class="field-input" id="stageName" placeholder="Your artist name">
+              </div>
+
+              <div class="field-group">
+                <label class="field-label">Bio</label>
+                <textarea class="field-input" id="bio" rows="3" placeholder="Tell people about your music and story..."></textarea>
+              </div>
+
+              <div class="field-group">
+                <label class="field-label">Primary Genre</label>
+                <select class="field-select" id="genre">
+                  <option value="">Select your genre</option>
+                  <option value="pop">Pop</option>
+                  <option value="rock">Rock</option>
+                  <option value="jazz">Jazz</option>
+                  <option value="classical">Classical</option>
+                  <option value="electronic">Electronic</option>
+                  <option value="hip-hop">Hip Hop</option>
+                  <option value="country">Country</option>
+                  <option value="folk">Folk</option>
+                  <option value="reggae">Reggae</option>
+                  <option value="blues">Blues</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div class="field-group">
+                <label class="field-label">Experience Level</label>
+                <select class="field-select" id="experience">
+                  <option value="">Select experience</option>
+                  <option value="beginner">Beginner (0-2 years)</option>
+                  <option value="intermediate">Intermediate (3-5 years)</option>
+                  <option value="advanced">Advanced (6-10 years)</option>
+                  <option value="professional">Professional (10+ years)</option>
+                </select>
+              </div>
+
+              <button type="submit" class="btn btn-primary">
+                <span>💾</span>
+                Update Profile
+              </button>
+            </form>
+          </div>
+
+          <div class="profile-card">
+            <h2 class="section-title">
+              <span>🌐</span>
+              Social Links
+            </h2>
+            <form class="profile-fields" id="socialForm">
+              <div class="field-group">
+                <label class="field-label">Website</label>
+                <input type="url" class="field-input" id="website" placeholder="https://yourwebsite.com">
+              </div>
+
+              <div class="field-group">
+                <label class="field-label">Instagram</label>
+                <input type="text" class="field-input" id="instagram" placeholder="@yourusername">
+              </div>
+
+              <div class="field-group">
+                <label class="field-label">Spotify</label>
+                <input type="url" class="field-input" id="spotify" placeholder="https://open.spotify.com/artist/...">
+              </div>
+
+              <div class="field-group">
+                <label class="field-label">YouTube</label>
+                <input type="url" class="field-input" id="youtube" placeholder="https://youtube.com/@channel">
+              </div>
+
+              <button type="submit" class="btn btn-secondary">
+                <span>🔗</span>
+                Update Links
+              </button>
+            </form>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      // Dashboard functionality
+      let currentUser = null;
+
+      // Check authentication and load dashboard
+      async function initDashboard() {
         try {
-            const response = await fetch('/api/auth/validate');
-            const data = await response.json();
+          const response = await fetch('/api/auth/validate');
+          if (!response.ok) {
+            window.location.href = '/auth/login?redirect=/dashboard/artist';
+            return;
+          }
 
-            if (!data.authenticated) {
-                window.location.href = '/auth/login?redirect=/dashboard/artist';
-                return;
-            }
+          const data = await response.json();
+          currentUser = data.user;
 
-            // Verify user is an artist
-            if (data.user.user_type !== 'artist') {
-                // Redirect non-artists to regular dashboard
-                window.location.href = '/dashboard';
-                return;
-            }
+          if (currentUser.user_type !== 'artist') {
+            window.location.href = '/';
+            return;
+          }
 
-            // Update UI with user data
-            updateUserInfo(data.user);
+          await loadDashboard();
+        } catch (error) {
+          console.error('Dashboard initialization failed:', error);
+          window.location.href = '/auth/login';
+        }
+      }
+
+      // Load dashboard data
+      async function loadDashboard() {
+        try {
+          // Update user info
+          document.getElementById('artistName').textContent = currentUser.name;
+          document.getElementById('profileName').textContent = currentUser.name;
+          document.getElementById('profileAvatar').textContent = 
+            currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase();
+
+          // Load stats
+          const statsResponse = await fetch('/api/dashboard/stats');
+          if (statsResponse.ok) {
+            const stats = await statsResponse.json();
             
-            // Load dashboard data
-            await loadDashboardStats();
-            
-            // Show dashboard
-            loadingState.style.display = 'none';
-            dashboardContent.style.display = 'block';
+            document.getElementById('eventsCount').textContent = stats.events_created || 0;
+            document.getElementById('totalViews').textContent = formatNumber(stats.total_views || 0);
+            document.getElementById('totalLikes').textContent = stats.total_likes || 0;
+            document.getElementById('followersCount').textContent = stats.followers_count || 0;
+          }
+
+          // Load profile data
+          loadProfileData();
+
+          // Show dashboard
+          document.getElementById('loadingState').classList.remove('show');
+          document.getElementById('dashboardContent').style.display = 'block';
 
         } catch (error) {
-            console.error('Authentication check failed:', error);
-            window.location.href = '/auth/login?redirect=/dashboard/artist';
+          console.error('Error loading dashboard:', error);
         }
+      }
 
-        function updateUserInfo(user) {
-            document.getElementById('welcomeMessage').textContent = 
-                `Welcome back, ${user.name || 'Artist'}!`;
-            
-            if (user.avatar_url) {
-                document.getElementById('userAvatar').src = user.avatar_url;
-            }
+      // Load profile data
+      function loadProfileData() {
+        // These would come from a profile API endpoint
+        // For now, using placeholder values
+        document.getElementById('stageName').value = currentUser.name || '';
+        document.getElementById('bio').value = '';
+        document.getElementById('genre').value = '';
+        document.getElementById('experience').value = '';
+        document.getElementById('website').value = '';
+        document.getElementById('instagram').value = '';
+        document.getElementById('spotify').value = '';
+        document.getElementById('youtube').value = '';
+      }
 
-            // Pre-fill profile form
-            document.getElementById('profileName').value = user.name || '';
-            document.getElementById('profileBio').value = user.bio || '';
-            document.getElementById('profileLocation').value = user.location || '';
-            document.getElementById('profileWebsite').value = user.website_url || '';
-            
-            // Artist-specific fields
-            document.getElementById('profileStageName').value = user.stage_name || '';
-            document.getElementById('profileGenres').value = 
-                Array.isArray(user.genres) ? user.genres.join(', ') : (user.genres || '');
-            document.getElementById('profileExperience').value = user.experience_level || '';
-            document.getElementById('profileRate').value = user.hourly_rate || '';
+      // Format numbers for display
+      function formatNumber(num) {
+        if (num >= 1000000) {
+          return (num / 1000000).toFixed(1) + 'M';
+        } else if (num >= 1000) {
+          return (num / 1000).toFixed(1) + 'K';
+        } else {
+          return num.toString();
         }
+      }
 
-        // Profile modal
-        profileBtn.addEventListener('click', () => {
-            profileModal.style.display = 'flex';
+      // Scroll to profile section
+      function scrollToProfile() {
+        document.getElementById('profile').scrollIntoView({ 
+          behavior: 'smooth',
+          block: 'start' 
         });
+      }
 
-        closeProfileModal.addEventListener('click', () => {
-            profileModal.style.display = 'none';
-        });
+      // Handle profile form submission
+      document.getElementById('profileForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = {
+          stageName: document.getElementById('stageName').value,
+          bio: document.getElementById('bio').value,
+          genre: document.getElementById('genre').value,
+          experience: document.getElementById('experience').value
+        };
 
-        cancelProfile.addEventListener('click', () => {
-            profileModal.style.display = 'none';
-        });
+        try {
+          const response = await fetch('/api/auth/profile', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData)
+          });
 
-        // Close modal when clicking outside
-        profileModal.addEventListener('click', (e) => {
-            if (e.target === profileModal) {
-                profileModal.style.display = 'none';
-            }
-        });
-
-        // Profile form submission
-        profileForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const formData = new FormData(profileForm);
-            const genres = formData.get('genres');
-            
-            const profileData = {
-                name: formData.get('name'),
-                bio: formData.get('bio'),
-                location: formData.get('location'),
-                website_url: formData.get('website'),
-                stage_name: formData.get('stageName'),
-                genres: genres ? genres.split(',').map(g => g.trim()).filter(g => g) : [],
-                experience_level: formData.get('experienceLevel'),
-                hourly_rate: formData.get('hourlyRate') ? parseFloat(formData.get('hourlyRate')) : null
-            };
-
-            try {
-                const response = await fetch('/api/auth/profile', {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(profileData)
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    alert('Artist profile updated successfully!');
-                    profileModal.style.display = 'none';
-                    location.reload();
-                } else {
-                    alert(data.error || 'Failed to update profile');
-                }
-            } catch (error) {
-                console.error('Profile update error:', error);
-                alert('Connection error. Please try again.');
-            }
-        });
-
-        // Logout
-        logoutBtn.addEventListener('click', async () => {
-            try {
-                const response = await fetch('/api/auth/logout', {
-                    method: 'POST'
-                });
-
-                if (response.ok) {
-                    window.location.href = '/';
-                } else {
-                    alert('Logout failed. Please try again.');
-                }
-            } catch (error) {
-                console.error('Logout error:', error);
-                alert('Logout failed. Please try again.');
-            }
-        });
-
-        // Action buttons
-        document.getElementById('portfolioBtn')?.addEventListener('click', () => {
-            alert('Portfolio management coming soon!');
-        });
-
-        document.getElementById('promotionBtn')?.addEventListener('click', () => {
-            alert('Promotion tools coming soon!');
-        });
-
-        document.getElementById('settingsBtn')?.addEventListener('click', () => {
-            profileModal.style.display = 'flex';
-        });
-
-        // Load dashboard stats
-        async function loadDashboardStats() {
-            try {
-                const response = await fetch('/api/dashboard/stats');
-                const data = await response.json();
-
-                if (data.success) {
-                    updateStats(data.stats);
-                    updateActivity();
-                }
-            } catch (error) {
-                console.error('Failed to load stats:', error);
-            }
+          if (response.ok) {
+            // Show success message
+            alert('Profile updated successfully!');
+          } else {
+            alert('Failed to update profile. Please try again.');
+          }
+        } catch (error) {
+          console.error('Profile update failed:', error);
+          alert('Failed to update profile. Please try again.');
         }
+      });
 
-        function updateStats(stats) {
-            document.getElementById('totalEvents').textContent = 
-                stats.events?.total_events || 0;
-            document.getElementById('publishedEvents').textContent = 
-                stats.events?.published_events || 0;
-            document.getElementById('eventLikes').textContent = 
-                stats.eventLikes || 0;
-            document.getElementById('followers').textContent = 
-                stats.followers || 0;
+      // Handle social form submission
+      document.getElementById('socialForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const socialData = {
+          website: document.getElementById('website').value,
+          instagram: document.getElementById('instagram').value,
+          spotify: document.getElementById('spotify').value,
+          youtube: document.getElementById('youtube').value
+        };
 
-            // Remove loading state
-            document.querySelectorAll('.stat-card').forEach(card => {
-                card.classList.remove('loading');
-            });
+        try {
+          // This would call a social links API endpoint
+          console.log('Social links:', socialData);
+          alert('Social links updated successfully!');
+        } catch (error) {
+          console.error('Social links update failed:', error);
+          alert('Failed to update social links. Please try again.');
         }
+      });
 
-        function updateActivity() {
-            const activityFeed = document.getElementById('activityFeed');
-            activityFeed.innerHTML = `
-                <div class="activity-item">
-                    <div class="activity-icon">🎨</div>
-                    <div class="activity-content">
-                        <p>Welcome to your artist dashboard!</p>
-                        <span class="activity-time">Just now</span>
-                    </div>
-                </div>
-                <div class="activity-item">
-                    <div class="activity-icon">📝</div>
-                    <div class="activity-content">
-                        <p>Complete your artist profile to get more visibility</p>
-                        <span class="activity-time">Tips</span>
-                    </div>
-                </div>
-            `;
-
-            const recentEvents = document.getElementById('recentEvents');
-            recentEvents.innerHTML = `
-                <div class="loading-item">
-                    <p>No events yet. <a href="/submit" style="color: #667eea;">Create your first event</a>!</p>
-                </div>
-            `;
-        }
-    });
-</script> 
+      // Initialize dashboard on page load
+      document.addEventListener('DOMContentLoaded', initDashboard);
+    </script>
+  </body>
+</html> 

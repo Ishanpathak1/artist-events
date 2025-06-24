@@ -1,4 +1,5 @@
 ---
+import Navigation from '../../components/Navigation.astro';
 import { Pool } from 'pg';
 
 // Database connection
@@ -11,19 +12,19 @@ const pool = new Pool({
 });
 
 // Get all published blog posts from database
-async function getPublishedBlogs() {
+async function getBlogPosts() {
   const client = await pool.connect();
   try {
     const result = await client.query(`
       SELECT 
         bp.id, bp.slug, bp.title, bp.content, bp.excerpt,
-        bp.featured, bp.view_count, bp.like_count, bp.comment_count,
-        bp.tags, bp.published_at, bp.created_at,
+        bp.published_at, bp.featured_image, bp.status,
+        bp.tags,
         u.name as author_name
       FROM blog_posts bp
-      JOIN users u ON bp.author_id = u.id
+      LEFT JOIN users u ON bp.author_id = u.id
       WHERE bp.status = 'published'
-      ORDER BY bp.published_at DESC, bp.created_at DESC
+      ORDER BY bp.published_at DESC
     `);
     
     return result.rows;
@@ -32,41 +33,18 @@ async function getPublishedBlogs() {
   }
 }
 
-const dbBlogs = await getPublishedBlogs();
-
-// Format blogs to match the old JSON structure
-const blogs = dbBlogs.map(blog => ({
-  slug: blog.slug,
-  title: blog.title,
-  author: blog.author_name,
-  authorBio: '', // Not stored in current schema
-  authorImage: '',
-  publishedDate: blog.published_at ? blog.published_at.toISOString().split('T')[0] : blog.created_at.toISOString().split('T')[0],
-  readTime: `${Math.ceil(blog.content.split(' ').length / 200)} min read`, // Estimate reading time
-  excerpt: blog.excerpt,
-  content: blog.content,
-  category: 'General', // Default category since not in current schema
-  tags: blog.tags || [],
-  featured: blog.featured,
-  likes: blog.like_count || 0,
-  comments: blog.comment_count || 0
-}));
-
-// Sort blogs by date (newest first) - already sorted by query
-const sortedBlogs = blogs;
-const featuredBlogs = sortedBlogs.filter(blog => blog.featured);
-const regularBlogs = sortedBlogs.filter(blog => !blog.featured);
-
-// Get unique categories for filter
-const categories = [...new Set(blogs.map(blog => blog.category))];
+const blogPosts = await getBlogPosts();
 ---
 
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Artist Blog - Stories from the Music World</title>
-    <meta name="description" content="Discover insights, stories, and wisdom from artists around the world. A Medium-style platform for the music community." />
+    <title>Artist Stories & Blog - Artist Events</title>
+    <meta name="description" content="Read inspiring stories from artists, discover insights about the music industry, and get tips for your artistic journey." />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
       * {
         margin: 0;
@@ -75,511 +53,695 @@ const categories = [...new Set(blogs.map(blog => blog.category))];
       }
 
       body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         line-height: 1.6;
-        color: #1a1a1a;
-        background: #fafafa;
+        color: #1e293b;
+        background: #f8fafc;
       }
 
-      .container {
-        max-width: 1200px;
+      /* Header Section */
+      .page-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 4rem 0 2rem;
+        text-align: center;
+      }
+
+      .header-container {
+        max-width: 800px;
         margin: 0 auto;
         padding: 0 20px;
       }
 
-      /* Header */
-      .header {
-        background: white;
-        padding: 1rem 0;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        position: sticky;
-        top: 0;
-        z-index: 100;
-      }
-
-      .nav {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-
-      .logo {
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: #1a1a1a;
-        text-decoration: none;
-      }
-
-      .nav-links {
-        display: flex;
-        gap: 2rem;
-        list-style: none;
-      }
-
-      .nav-links a {
-        color: #666;
-        text-decoration: none;
-        font-weight: 500;
-        transition: color 0.3s;
-      }
-
-      .nav-links a:hover,
-      .nav-links a.active {
-        color: #1a1a1a;
-      }
-
-      /* Hero Section */
-      .hero {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 4rem 0;
-        text-align: center;
-      }
-
-      .hero h1 {
+      .page-title {
         font-size: 3rem;
-        margin-bottom: 1rem;
         font-weight: 700;
+        margin-bottom: 1rem;
+        line-height: 1.1;
       }
 
-      .hero p {
+      .page-subtitle {
         font-size: 1.2rem;
         opacity: 0.9;
-        max-width: 600px;
-        margin: 0 auto 2rem;
+        margin-bottom: 2rem;
       }
 
-      .cta-button {
-        display: inline-block;
-        background: rgba(255,255,255,0.15);
-        color: white;
+      .header-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
         padding: 12px 24px;
-        border-radius: 30px;
+        border-radius: 12px;
         text-decoration: none;
         font-weight: 600;
-        border: 2px solid rgba(255,255,255,0.3);
-        transition: all 0.3s;
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
       }
 
-      .cta-button:hover {
+      .btn-primary {
+        background: rgba(255, 255, 255, 0.15);
+        color: white;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        backdrop-filter: blur(10px);
+      }
+
+      .btn-primary:hover {
         background: white;
         color: #667eea;
         border-color: white;
+        transform: translateY(-2px);
       }
 
-      /* Content */
-      .content {
-        padding: 3rem 0;
+      /* Main Content */
+      .main-content {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 3rem 20px;
       }
 
-      .section-title {
-        font-size: 2rem;
-        margin-bottom: 2rem;
-        text-align: center;
-        color: #1a1a1a;
-      }
-
-      /* Categories Filter */
-      .categories-filter {
-        display: flex;
-        justify-content: center;
-        flex-wrap: wrap;
-        gap: 1rem;
+      /* Filter Bar */
+      .filter-bar {
+        background: white;
+        border-radius: 16px;
+        padding: 1.5rem;
         margin-bottom: 3rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        border: 1px solid rgba(226, 232, 240, 0.8);
       }
 
-      .category-btn {
-        background: white;
-        color: #666;
-        padding: 8px 16px;
-        border: 1px solid #e1e5e9;
-        border-radius: 20px;
-        font-size: 0.9rem;
-        cursor: pointer;
-        transition: all 0.3s;
-        text-decoration: none;
-      }
-
-      .category-btn:hover,
-      .category-btn.active {
-        background: #667eea;
-        color: white;
-        border-color: #667eea;
-      }
-
-      /* Featured Blogs */
-      .featured-section {
-        margin-bottom: 4rem;
-      }
-
-      .featured-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-        gap: 2rem;
-        margin-bottom: 2rem;
-      }
-
-      .featured-card {
-        background: white;
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-        transition: all 0.3s;
-        text-decoration: none;
-        color: inherit;
-      }
-
-      .featured-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 30px rgba(0,0,0,0.15);
-      }
-
-      .featured-badge {
-        background: #ff6b6b;
-        color: white;
-        padding: 4px 12px;
-        border-radius: 12px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        position: absolute;
-        top: 1rem;
-        left: 1rem;
-        z-index: 2;
-      }
-
-      .card-content {
-        padding: 2rem;
-        position: relative;
-      }
-
-      .card-category {
-        color: #667eea;
-        font-size: 0.85rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 0.5rem;
-      }
-
-      .card-title {
-        font-size: 1.4rem;
-        font-weight: 700;
-        line-height: 1.3;
-        margin-bottom: 0.75rem;
-        color: #1a1a1a;
-      }
-
-      .card-excerpt {
-        color: #666;
-        font-size: 1rem;
-        line-height: 1.6;
-        margin-bottom: 1.5rem;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-      }
-
-      .card-meta {
+      .filter-content {
         display: flex;
-        justify-content: space-between;
         align-items: center;
-        margin-bottom: 1rem;
+        gap: 2rem;
+        flex-wrap: wrap;
       }
 
-      .author-info {
+      .filter-group {
         display: flex;
         align-items: center;
         gap: 0.75rem;
       }
 
-      .author-avatar {
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #667eea, #764ba2);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
+      .filter-label {
         font-weight: 600;
-        font-size: 0.9rem;
+        color: #374151;
       }
 
-      .author-details {
-        display: flex;
-        flex-direction: column;
+      .filter-select {
+        padding: 8px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        background: white;
+        cursor: pointer;
+        min-width: 120px;
       }
 
-      .author-name {
-        font-weight: 600;
-        color: #1a1a1a;
-        font-size: 0.9rem;
+      .search-box {
+        flex: 1;
+        min-width: 250px;
       }
 
-      .publish-date {
-        color: #999;
-        font-size: 0.8rem;
-      }
-
-      .read-time {
-        color: #999;
-        font-size: 0.85rem;
-      }
-
-      .card-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-      }
-
-      .tag {
-        background: #f0f0f0;
-        color: #666;
-        padding: 3px 8px;
+      .search-input {
+        width: 100%;
+        padding: 12px 16px;
+        border: 1px solid #d1d5db;
         border-radius: 12px;
-        font-size: 0.75rem;
-        font-weight: 500;
+        font-size: 1rem;
+        transition: all 0.3s ease;
       }
 
-      /* Regular Blogs Grid */
-      .blogs-grid {
+      .search-input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      /* Blog Grid */
+      .blog-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
         gap: 2rem;
+        margin-bottom: 3rem;
       }
 
       .blog-card {
         background: white;
-        border-radius: 12px;
-        padding: 1.5rem;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-        transition: all 0.3s;
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+        border: 1px solid rgba(226, 232, 240, 0.8);
         text-decoration: none;
         color: inherit;
-        border: 1px solid #f0f0f0;
       }
 
       .blog-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        transform: translateY(-8px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
       }
 
-      .engagement {
-        display: flex;
-        gap: 1rem;
-        margin-top: 1rem;
-        padding-top: 1rem;
-        border-top: 1px solid #f0f0f0;
-        font-size: 0.85rem;
-        color: #999;
-      }
-
-      .engagement span {
+      .blog-image {
+        height: 200px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
         display: flex;
         align-items: center;
-        gap: 0.25rem;
+        justify-content: center;
+        font-size: 3rem;
+        color: white;
+        position: relative;
+        overflow: hidden;
       }
 
-      /* No results */
-      .no-results {
-        text-align: center;
-        padding: 4rem 2rem;
-        background: white;
-        border-radius: 12px;
-        margin: 2rem 0;
+      .blog-category-badge {
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        background: rgba(255, 255, 255, 0.95);
+        color: #667eea;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        backdrop-filter: blur(10px);
       }
 
-      .no-results h3 {
-        color: #666;
+      .blog-content {
+        padding: 1.5rem;
+      }
+
+      .blog-meta {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1rem;
+        color: #64748b;
+        font-size: 0.9rem;
+      }
+
+      .blog-author {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .blog-date {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .blog-title {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 0.75rem;
+        line-height: 1.3;
+      }
+
+      .blog-excerpt {
+        color: #64748b;
+        margin-bottom: 1rem;
+        line-height: 1.6;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .blog-tags {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
         margin-bottom: 1rem;
       }
 
-      /* Responsive */
+      .blog-tag {
+        background: rgba(102, 126, 234, 0.1);
+        color: #667eea;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 500;
+      }
+
+      .blog-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 1rem;
+        border-top: 1px solid #f1f5f9;
+      }
+
+      .read-time {
+        color: #64748b;
+        font-size: 0.85rem;
+      }
+
+      .read-more {
+        color: #667eea;
+        font-weight: 600;
+        font-size: 0.9rem;
+      }
+
+      /* No posts state */
+      .no-posts {
+        text-align: center;
+        padding: 4rem 2rem;
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      }
+
+      .no-posts h3 {
+        color: #64748b;
+        margin-bottom: 1rem;
+        font-size: 1.3rem;
+      }
+
+      .no-posts p {
+        color: #64748b;
+        margin-bottom: 2rem;
+      }
+
+      /* Featured Post */
+      .featured-post {
+        background: white;
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        margin-bottom: 3rem;
+        border: 1px solid rgba(226, 232, 240, 0.8);
+      }
+
+      .featured-content {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0;
+        min-height: 300px;
+      }
+
+      .featured-image {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 4rem;
+        color: white;
+        position: relative;
+      }
+
+      .featured-badge {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: rgba(255, 255, 255, 0.95);
+        color: #f59e0b;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .featured-text {
+        padding: 2rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .featured-title {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 1rem;
+        line-height: 1.2;
+      }
+
+      .featured-excerpt {
+        color: #64748b;
+        margin-bottom: 1.5rem;
+        line-height: 1.6;
+        font-size: 1.1rem;
+      }
+
+      .featured-meta {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        margin-bottom: 1.5rem;
+        color: #64748b;
+      }
+
+      .featured-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #667eea;
+        font-weight: 600;
+        text-decoration: none;
+        transition: all 0.3s ease;
+      }
+
+      .featured-cta:hover {
+        transform: translateX(4px);
+      }
+
+      /* Stats Section */
+      .stats-section {
+        background: white;
+        border-radius: 16px;
+        padding: 2rem;
+        margin-bottom: 3rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 2rem;
+        text-align: center;
+      }
+
+      .stat-item {
+        padding: 1rem;
+      }
+
+      .stat-number {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #667eea;
+        display: block;
+        margin-bottom: 0.5rem;
+      }
+
+      .stat-label {
+        color: #64748b;
+        font-weight: 500;
+      }
+
+      /* Responsive Design */
+      @media (max-width: 1024px) {
+        .featured-content {
+          grid-template-columns: 1fr;
+        }
+
+        .featured-image {
+          min-height: 200px;
+        }
+      }
+
       @media (max-width: 768px) {
-        .hero h1 {
-          font-size: 2rem;
+        .page-title {
+          font-size: 2.5rem;
         }
 
-        .featured-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .blogs-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .nav-links {
+        .filter-content {
+          flex-direction: column;
+          align-items: stretch;
           gap: 1rem;
         }
 
-        .categories-filter {
-          gap: 0.5rem;
+        .filter-group {
+          justify-content: space-between;
+        }
+
+        .blog-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .header-actions {
+          flex-direction: column;
+          align-items: center;
+        }
+
+        .btn {
+          width: 100%;
+          max-width: 300px;
+          justify-content: center;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .main-content {
+          padding: 2rem 16px;
+        }
+
+        .blog-content {
+          padding: 1rem;
+        }
+
+        .featured-text {
+          padding: 1.5rem;
+        }
+
+        .featured-title {
+          font-size: 1.5rem;
         }
       }
     </style>
   </head>
   <body>
-    <!-- Header -->
-    <header class="header">
-      <nav class="nav container">
-        <a href="/" class="logo">🎵 Artist Events</a>
-        <ul class="nav-links">
-          <li><a href="/">Home</a></li>
-          <li><a href="/events">Events</a></li>
-          <li><a href="/blog" class="active">Blog</a></li>
-          <li><a href="/blog/submit">Write</a></li>
-          <li><a href="/search">Search</a></li>
-        </ul>
-      </nav>
-    </header>
+    <Navigation currentPage="blog" />
 
-    <!-- Hero Section -->
-    <section class="hero">
-      <div class="container">
-        <h1>Artist Stories</h1>
-        <p>Discover insights, wisdom, and stories from artists around the world. A place where creativity meets community.</p>
-        <a href="/blog/submit" class="cta-button">Share Your Story</a>
+    <!-- Page Header -->
+    <section class="page-header">
+      <div class="header-container">
+        <h1 class="page-title">Artist Stories & Blog</h1>
+        <p class="page-subtitle">
+          Read inspiring stories from artists, discover insights about the music industry, and get tips for your artistic journey.
+        </p>
+        <div class="header-actions">
+          <a href="/blog/submit" class="btn btn-primary">
+            <span>✍️</span>
+            Write Your Story
+          </a>
+        </div>
       </div>
     </section>
 
     <!-- Main Content -->
-    <main class="content">
-      <div class="container">
-        <!-- Categories Filter -->
-        <div class="categories-filter">
-          <button class="category-btn active" data-category="all">All Stories</button>
-          {categories.map(category => (
-            <button class="category-btn" data-category={category}>{category}</button>
-          ))}
+    <main class="main-content">
+      <!-- Stats Section -->
+      <section class="stats-section">
+        <div class="stats-grid">
+          <div class="stat-item">
+            <span class="stat-number">{blogPosts.length}</span>
+            <span class="stat-label">Stories Published</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">{new Set(blogPosts.map(post => post.author_name)).size}</span>
+            <span class="stat-label">Contributing Artists</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">{new Set(blogPosts.flatMap(post => post.tags || [])).size}</span>
+            <span class="stat-label">Topics Covered</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">10K+</span>
+            <span class="stat-label">Readers Monthly</span>
+          </div>
         </div>
+      </section>
 
-        <!-- Featured Blogs -->
-        {featuredBlogs.length > 0 && (
-          <section class="featured-section">
-            <h2 class="section-title">Featured Stories</h2>
-            <div class="featured-grid">
-              {featuredBlogs.map(blog => (
-                <a href={`/blog/${blog.slug}`} class="featured-card" data-category={blog.category}>
-                  <div class="card-content">
-                    <div class="featured-badge">Featured</div>
-                    <div class="card-category">{blog.category}</div>
-                    <h3 class="card-title">{blog.title}</h3>
-                    <p class="card-excerpt">{blog.excerpt}</p>
-                    <div class="card-meta">
-                      <div class="author-info">
-                        <div class="author-avatar">
-                          {blog.author.split(' ').map(name => name[0]).join('')}
-                        </div>
-                        <div class="author-details">
-                          <div class="author-name">{blog.author}</div>
-                          <div class="publish-date">
-                            {new Date(blog.publishedDate).toLocaleDateString('en-US', { 
-                              year: 'numeric', 
-                              month: 'long', 
-                              day: 'numeric' 
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                      <div class="read-time">{blog.readTime}</div>
-                    </div>
-                    <div class="card-tags">
-                      {blog.tags.slice(0, 3).map(tag => (
-                        <span class="tag">{tag}</span>
-                      ))}
-                    </div>
-                  </div>
-                </a>
-              ))}
+      <!-- Filter Bar -->
+      <section class="filter-bar">
+        <div class="filter-content">
+          <div class="filter-group">
+            <label class="filter-label">Category:</label>
+            <select class="filter-select" id="categoryFilter">
+              <option value="">All Categories</option>
+              <option value="tips">Tips & Advice</option>
+              <option value="stories">Artist Stories</option>
+              <option value="industry">Industry News</option>
+              <option value="tutorial">Tutorials</option>
+            </select>
+          </div>
+          
+          <div class="filter-group">
+            <label class="filter-label">Sort:</label>
+            <select class="filter-select" id="sortFilter">
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+              <option value="popular">Most Popular</option>
+            </select>
+          </div>
+
+          <div class="search-box">
+            <input 
+              type="text" 
+              class="search-input" 
+              placeholder="Search stories, artists, or topics..." 
+              id="searchInput"
+            />
+          </div>
+        </div>
+      </section>
+
+      <!-- Featured Post (if available) -->
+      {blogPosts.length > 0 && (
+        <section class="featured-post">
+          <a href={`/blog/${blogPosts[0].slug}`} style="text-decoration: none; color: inherit;">
+            <div class="featured-content">
+              <div class="featured-image">
+                <div class="featured-badge">Featured</div>
+                ✍️
+              </div>
+              <div class="featured-text">
+                <h2 class="featured-title">{blogPosts[0].title}</h2>
+                <p class="featured-excerpt">{blogPosts[0].excerpt || blogPosts[0].content.substring(0, 200) + '...'}</p>
+                <div class="featured-meta">
+                  <span>👤 {blogPosts[0].author_name}</span>
+                  <span>📅 {new Date(blogPosts[0].published_at).toLocaleDateString()}</span>
+                  <span>📂 Story</span>
+                </div>
+                <div class="featured-cta">
+                  Read Full Story →
+                </div>
+              </div>
             </div>
-          </section>
-        )}
-
-        <!-- All Blogs -->
-        <section>
-          <h2 class="section-title">Latest Stories</h2>
-          <div class="blogs-grid" id="blogsGrid">
-            {regularBlogs.map(blog => (
-              <a href={`/blog/${blog.slug}`} class="blog-card" data-category={blog.category}>
-                <div class="card-category">{blog.category}</div>
-                <h3 class="card-title">{blog.title}</h3>
-                <p class="card-excerpt">{blog.excerpt}</p>
-                <div class="card-meta">
-                  <div class="author-info">
-                    <div class="author-avatar">
-                      {blog.author.split(' ').map(name => name[0]).join('')}
-                    </div>
-                    <div class="author-details">
-                      <div class="author-name">{blog.author}</div>
-                      <div class="publish-date">
-                        {new Date(blog.publishedDate).toLocaleDateString('en-US', { 
-                          year: 'numeric', 
-                          month: 'long', 
-                          day: 'numeric' 
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                  <div class="read-time">{blog.readTime}</div>
-                </div>
-                <div class="card-tags">
-                  {blog.tags.slice(0, 4).map(tag => (
-                    <span class="tag">{tag}</span>
-                  ))}
-                </div>
-                <div class="engagement">
-                  <span>❤️ {blog.likes}</span>
-                  <span>💬 {blog.comments}</span>
-                </div>
-              </a>
-            ))}
-          </div>
-
-          <div class="no-results" id="noResults" style="display: none;">
-            <h3>No stories found in this category</h3>
-            <p>Try selecting a different category or check back later for new content.</p>
-          </div>
+          </a>
         </section>
-      </div>
+      )}
+
+      <!-- Blog Posts Grid -->
+      {blogPosts.length > 0 ? (
+        <section class="blog-grid" id="blogGrid">
+          {blogPosts.slice(1).map(post => (
+            <a href={`/blog/${post.slug}`} class="blog-card">
+              <div class="blog-image">
+                <div class="blog-category-badge">Story</div>
+                ✍️
+              </div>
+              <div class="blog-content">
+                <div class="blog-meta">
+                  <div class="blog-author">
+                    <span>👤</span>
+                    {post.author_name}
+                  </div>
+                  <div class="blog-date">
+                    <span>📅</span>
+                    {new Date(post.published_at).toLocaleDateString('en-US', { 
+                      month: 'short', 
+                      day: 'numeric',
+                      year: 'numeric'
+                    })}
+                  </div>
+                </div>
+
+                <h3 class="blog-title">{post.title}</h3>
+                <p class="blog-excerpt">
+                  {post.excerpt || post.content.substring(0, 150) + '...'}
+                </p>
+
+                {post.tags && post.tags.filter(Boolean).length > 0 && (
+                  <div class="blog-tags">
+                    {post.tags.filter(Boolean).slice(0, 3).map(tag => (
+                      <span class="blog-tag">{tag}</span>
+                    ))}
+                  </div>
+                )}
+
+                <div class="blog-footer">
+                  <span class="read-time">5 min read</span>
+                  <span class="read-more">Read More →</span>
+                </div>
+              </div>
+            </a>
+          ))}
+        </section>
+      ) : (
+        <section class="no-posts">
+          <h3>📝 No stories yet!</h3>
+          <p>Be the first to share your artistic journey and inspire others in the community.</p>
+          <a href="/blog/submit" class="btn btn-primary">Write First Story</a>
+        </section>
+      )}
+
+      <!-- Load More (if needed) -->
+      {blogPosts.length > 9 && (
+        <div style="text-align: center; margin-top: 3rem;">
+          <button class="btn btn-primary" id="loadMoreBtn">
+            <span>📚</span>
+            Load More Stories
+          </button>
+        </div>
+      )}
     </main>
 
     <script>
-      // Category filtering
-      const categoryButtons = document.querySelectorAll('.category-btn');
-      const blogCards = document.querySelectorAll('[data-category]');
-      const noResults = document.getElementById('noResults');
-      const blogsGrid = document.getElementById('blogsGrid');
-
-      categoryButtons.forEach(button => {
-        button.addEventListener('click', () => {
-          const category = button.dataset.category;
+      // Filter and search functionality
+      const categoryFilter = document.getElementById('categoryFilter');
+      const sortFilter = document.getElementById('sortFilter');
+      const searchInput = document.getElementById('searchInput');
+      const blogGrid = document.getElementById('blogGrid');
+      
+      let allPosts = Array.from(blogGrid.querySelectorAll('.blog-card'));
+      
+      function filterAndSort() {
+        const category = categoryFilter.value.toLowerCase();
+        const sortBy = sortFilter.value;
+        const searchTerm = searchInput.value.toLowerCase();
+        
+        let filteredPosts = allPosts.filter(post => {
+          const categoryBadge = post.querySelector('.blog-category-badge').textContent.toLowerCase();
+          const title = post.querySelector('.blog-title').textContent.toLowerCase();
+          const excerpt = post.querySelector('.blog-excerpt').textContent.toLowerCase();
+          const author = post.querySelector('.blog-author').textContent.toLowerCase();
           
-          // Update active button
-          categoryButtons.forEach(btn => btn.classList.remove('active'));
-          button.classList.add('active');
+          const matchesCategory = !category || categoryBadge.includes(category);
+          const matchesSearch = !searchTerm || 
+            title.includes(searchTerm) || 
+            excerpt.includes(searchTerm) || 
+            author.includes(searchTerm);
           
-          // Filter cards
-          let visibleCount = 0;
-          blogCards.forEach(card => {
-            if (category === 'all' || card.dataset.category === category) {
-              card.style.display = 'block';
-              visibleCount++;
-            } else {
-              card.style.display = 'none';
-            }
-          });
-          
-          // Show/hide no results message
-          if (visibleCount === 0) {
-            blogsGrid.style.display = 'none';
-            noResults.style.display = 'block';
-          } else {
-            blogsGrid.style.display = 'grid';
-            noResults.style.display = 'none';
-          }
+          return matchesCategory && matchesSearch;
         });
-      });
+        
+        // Sort posts
+        if (sortBy === 'oldest') {
+          filteredPosts.reverse();
+        }
+        // Add more sorting logic as needed
+        
+        // Clear grid and add filtered posts
+        blogGrid.innerHTML = '';
+        filteredPosts.forEach(post => blogGrid.appendChild(post));
+        
+        // Show no results message if needed
+        if (filteredPosts.length === 0) {
+          blogGrid.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 3rem; color: #64748b;">
+              <h3>No stories found</h3>
+              <p>Try adjusting your filters or search terms.</p>
+            </div>
+          `;
+        }
+      }
+      
+      categoryFilter.addEventListener('change', filterAndSort);
+      sortFilter.addEventListener('change', filterAndSort);
+      searchInput.addEventListener('input', filterAndSort);
+      
+      // Load more functionality
+      const loadMoreBtn = document.getElementById('loadMoreBtn');
+      if (loadMoreBtn) {
+        loadMoreBtn.addEventListener('click', () => {
+          // This would load more posts from the server
+          alert('Load more functionality would be implemented with pagination');
+        });
+      }
     </script>
   </body>
 </html> 

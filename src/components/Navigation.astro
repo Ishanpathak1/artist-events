@@ -1,0 +1,590 @@
+---
+interface Props {
+  currentPage?: string;
+}
+
+const { currentPage } = Astro.props;
+---
+
+<nav class="main-nav">
+  <div class="nav-container">
+    <!-- Logo/Brand -->
+    <a href="/" class="brand">
+      <div class="brand-icon">🎵</div>
+      <div class="brand-text">
+        <span class="brand-name">Artist Events</span>
+        <span class="brand-tagline">Connect. Create. Celebrate.</span>
+      </div>
+    </a>
+
+    <!-- Desktop Navigation -->
+    <div class="nav-links desktop-nav">
+      <a href="/" class={currentPage === 'home' ? 'nav-link active' : 'nav-link'}>
+        <span class="nav-icon">🏠</span>
+        Home
+      </a>
+      <a href="/events" class={currentPage === 'events' ? 'nav-link active' : 'nav-link'}>
+        <span class="nav-icon">🎪</span>
+        Events
+      </a>
+      <a href="/blog" class={currentPage === 'blog' ? 'nav-link active' : 'nav-link'}>
+        <span class="nav-icon">📖</span>
+        Stories
+      </a>
+      <a href="/search" class={currentPage === 'search' ? 'nav-link active' : 'nav-link'}>
+        <span class="nav-icon">🔍</span>
+        Discover
+      </a>
+    </div>
+
+    <!-- Auth Actions -->
+    <div class="nav-actions">
+      <a href="/submit" class="btn-primary">
+        <span>+</span>
+        Add Event
+      </a>
+      <div class="auth-menu" id="authMenu">
+        <button class="profile-btn" id="profileBtn">
+          <img src="/default-avatar.svg" alt="Profile" class="profile-avatar">
+          <span class="profile-name" id="profileName">Account</span>
+          <span class="dropdown-arrow">▼</span>
+        </button>
+        <div class="auth-dropdown" id="authDropdown">
+          <div class="auth-user-info" id="userInfo" style="display: none;">
+            <div class="user-avatar">
+              <img src="/default-avatar.svg" alt="User">
+            </div>
+            <div class="user-details">
+              <div class="user-name" id="userName"></div>
+              <div class="user-type" id="userType"></div>
+            </div>
+          </div>
+          <div class="dropdown-divider" id="userDivider" style="display: none;"></div>
+          <a href="/dashboard/artist" class="dropdown-item" id="dashboardLink" style="display: none;">
+            <span>📊</span>
+            Dashboard
+          </a>
+          <a href="/blog/submit" class="dropdown-item">
+            <span>✍️</span>
+            Write Story
+          </a>
+          <a href="/submit" class="dropdown-item">
+            <span>🎯</span>
+            Create Event
+          </a>
+          <div class="dropdown-divider"></div>
+          <button class="dropdown-item logout-btn" id="logoutBtn" style="display: none;">
+            <span>🚪</span>
+            Sign Out
+          </button>
+          <a href="/auth/login" class="dropdown-item" id="loginLink">
+            <span>🔑</span>
+            Sign In
+          </a>
+          <a href="/auth/register" class="dropdown-item" id="registerLink">
+            <span>✨</span>
+            Join Us
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile Menu Toggle -->
+    <button class="mobile-menu-btn" id="mobileMenuBtn">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+  </div>
+
+  <!-- Mobile Navigation -->
+  <div class="mobile-nav" id="mobileNav">
+    <div class="mobile-nav-links">
+      <a href="/" class="mobile-nav-link">🏠 Home</a>
+      <a href="/events" class="mobile-nav-link">🎪 Events</a>
+      <a href="/blog" class="mobile-nav-link">📖 Stories</a>
+      <a href="/search" class="mobile-nav-link">🔍 Discover</a>
+      <div class="mobile-nav-divider"></div>
+      <a href="/submit" class="mobile-nav-link">🎯 Create Event</a>
+      <a href="/blog/submit" class="mobile-nav-link">✍️ Write Story</a>
+      <div class="mobile-nav-divider"></div>
+      <a href="/auth/login" class="mobile-nav-link" id="mobileLoginLink">🔑 Sign In</a>
+      <a href="/auth/register" class="mobile-nav-link" id="mobileRegisterLink">✨ Join Us</a>
+      <button class="mobile-nav-link logout-btn" id="mobileLogoutBtn" style="display: none;">🚪 Sign Out</button>
+    </div>
+  </div>
+</nav>
+
+<style>
+  .main-nav {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    transition: all 0.3s ease;
+  }
+
+  .nav-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 70px;
+  }
+
+  /* Brand */
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    transition: transform 0.3s ease;
+  }
+
+  .brand:hover {
+    transform: scale(1.02);
+  }
+
+  .brand-icon {
+    font-size: 2rem;
+    filter: drop-shadow(0 2px 4px rgba(102, 126, 234, 0.3));
+  }
+
+  .brand-text {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .brand-name {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #1a1a1a;
+    line-height: 1;
+  }
+
+  .brand-tagline {
+    font-size: 0.7rem;
+    color: #667eea;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    line-height: 1;
+  }
+
+  /* Desktop Navigation */
+  .desktop-nav {
+    display: flex;
+    gap: 2rem;
+  }
+
+  .nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 8px 16px;
+    text-decoration: none;
+    color: #666;
+    font-weight: 500;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    position: relative;
+  }
+
+  .nav-link:hover {
+    color: #667eea;
+    background: rgba(102, 126, 234, 0.1);
+    transform: translateY(-1px);
+  }
+
+  .nav-link.active {
+    color: #667eea;
+    background: rgba(102, 126, 234, 0.15);
+  }
+
+  .nav-link.active::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 20px;
+    height: 2px;
+    background: #667eea;
+    border-radius: 1px;
+  }
+
+  .nav-icon {
+    font-size: 0.9rem;
+  }
+
+  /* Auth Actions */
+  .nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .btn-primary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 10px 18px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: all 0.3s ease;
+    border: none;
+    cursor: pointer;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+  }
+
+  /* Profile Menu */
+  .auth-menu {
+    position: relative;
+  }
+
+  .profile-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: white;
+    border: 1px solid #e1e5e9;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 0.9rem;
+  }
+
+  .profile-btn:hover {
+    border-color: #667eea;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+  }
+
+  .profile-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+  }
+
+  .profile-name {
+    font-weight: 500;
+    color: #1a1a1a;
+  }
+
+  .dropdown-arrow {
+    font-size: 0.7rem;
+    color: #666;
+    transition: transform 0.3s ease;
+  }
+
+  .auth-menu.open .dropdown-arrow {
+    transform: rotate(180deg);
+  }
+
+  /* Dropdown */
+  .auth-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    background: white;
+    border: 1px solid #e1e5e9;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+    min-width: 240px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+    z-index: 1000;
+  }
+
+  .auth-menu.open .auth-dropdown {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+  }
+
+  .auth-user-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    background: linear-gradient(135deg, #f8f9ff 0%, #f0f2ff 100%);
+    border-radius: 12px 12px 0 0;
+  }
+
+  .user-avatar img {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+  }
+
+  .user-name {
+    font-weight: 600;
+    color: #1a1a1a;
+    font-size: 0.95rem;
+  }
+
+  .user-type {
+    font-size: 0.8rem;
+    color: #667eea;
+    text-transform: capitalize;
+  }
+
+  .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    text-decoration: none;
+    color: #444;
+    transition: all 0.3s ease;
+    border: none;
+    background: none;
+    width: 100%;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+
+  .dropdown-item:hover {
+    background: rgba(102, 126, 234, 0.08);
+    color: #667eea;
+  }
+
+  .dropdown-item span {
+    width: 16px;
+    text-align: center;
+  }
+
+  .dropdown-divider {
+    height: 1px;
+    background: #f0f0f0;
+    margin: 8px 0;
+  }
+
+  /* Mobile Menu */
+  .mobile-menu-btn {
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+  }
+
+  .mobile-menu-btn span {
+    width: 20px;
+    height: 2px;
+    background: #1a1a1a;
+    transition: all 0.3s ease;
+  }
+
+  .mobile-nav {
+    display: none;
+    background: white;
+    border-top: 1px solid #f0f0f0;
+    padding: 20px;
+  }
+
+  .mobile-nav-links {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .mobile-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    text-decoration: none;
+    color: #444;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .mobile-nav-link:hover {
+    background: rgba(102, 126, 234, 0.08);
+    color: #667eea;
+  }
+
+  .mobile-nav-divider {
+    height: 1px;
+    background: #f0f0f0;
+    margin: 12px 0;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .desktop-nav,
+    .nav-actions .btn-primary {
+      display: none;
+    }
+
+    .mobile-menu-btn {
+      display: flex;
+    }
+
+    .mobile-nav.open {
+      display: block;
+    }
+
+    .brand-text {
+      display: none;
+    }
+
+    .brand-icon {
+      font-size: 1.8rem;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .nav-container {
+      padding: 0 16px;
+    }
+
+    .auth-dropdown {
+      right: -20px;
+      min-width: 200px;
+    }
+  }
+</style>
+
+<script>
+  // Authentication state management
+  let isAuthenticated = false;
+  let currentUser = null;
+
+  // Check authentication status
+  async function checkAuth() {
+    try {
+      const response = await fetch('/api/auth/validate');
+      if (response.ok) {
+        const data = await response.json();
+        isAuthenticated = true;
+        currentUser = data.user;
+        updateAuthUI();
+      } else {
+        isAuthenticated = false;
+        currentUser = null;
+        updateAuthUI();
+      }
+    } catch (error) {
+      console.error('Auth check failed:', error);
+      isAuthenticated = false;
+      updateAuthUI();
+    }
+  }
+
+  // Update UI based on auth state
+  function updateAuthUI() {
+    const profileName = document.getElementById('profileName');
+    const userName = document.getElementById('userName');
+    const userType = document.getElementById('userType');
+    const userInfo = document.getElementById('userInfo');
+    const userDivider = document.getElementById('userDivider');
+    const dashboardLink = document.getElementById('dashboardLink');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const mobileLogoutBtn = document.getElementById('mobileLogoutBtn');
+    const loginLink = document.getElementById('loginLink');
+    const registerLink = document.getElementById('registerLink');
+    const mobileLoginLink = document.getElementById('mobileLoginLink');
+    const mobileRegisterLink = document.getElementById('mobileRegisterLink');
+
+    if (isAuthenticated && currentUser) {
+      // Show authenticated UI
+      profileName.textContent = currentUser.name || 'User';
+      userName.textContent = currentUser.name || 'User';
+      userType.textContent = `${currentUser.user_type} Account`;
+      
+      userInfo.style.display = 'flex';
+      userDivider.style.display = 'block';
+      logoutBtn.style.display = 'flex';
+      mobileLogoutBtn.style.display = 'flex';
+      
+      if (currentUser.user_type === 'artist') {
+        dashboardLink.style.display = 'flex';
+      }
+      
+      loginLink.style.display = 'none';
+      registerLink.style.display = 'none';
+      mobileLoginLink.style.display = 'none';
+      mobileRegisterLink.style.display = 'none';
+    } else {
+      // Show guest UI
+      profileName.textContent = 'Account';
+      
+      userInfo.style.display = 'none';
+      userDivider.style.display = 'none';
+      dashboardLink.style.display = 'none';
+      logoutBtn.style.display = 'none';
+      mobileLogoutBtn.style.display = 'none';
+      
+      loginLink.style.display = 'flex';
+      registerLink.style.display = 'flex';
+      mobileLoginLink.style.display = 'flex';
+      mobileRegisterLink.style.display = 'flex';
+    }
+  }
+
+  // Logout functionality
+  async function logout() {
+    try {
+      const response = await fetch('/api/auth/logout', { method: 'POST' });
+      if (response.ok) {
+        window.location.href = '/';
+      }
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  }
+
+  // Event listeners
+  document.addEventListener('DOMContentLoaded', () => {
+    checkAuth();
+
+    // Profile dropdown toggle
+    const authMenu = document.getElementById('authMenu');
+    const profileBtn = document.getElementById('profileBtn');
+    
+    profileBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      authMenu.classList.toggle('open');
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', () => {
+      authMenu?.classList.remove('open');
+    });
+
+    // Logout buttons
+    document.getElementById('logoutBtn')?.addEventListener('click', logout);
+    document.getElementById('mobileLogoutBtn')?.addEventListener('click', logout);
+
+    // Mobile menu toggle
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const mobileNav = document.getElementById('mobileNav');
+    
+    mobileMenuBtn?.addEventListener('click', () => {
+      mobileNav.classList.toggle('open');
+    });
+  });
+</script> 

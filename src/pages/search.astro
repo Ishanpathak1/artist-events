@@ -1,4 +1,5 @@
 ---
+import Navigation from '../components/Navigation.astro';
 import { Pool } from 'pg';
 
 // Database connection
@@ -16,13 +17,11 @@ async function getPublishedEvents() {
   try {
     const result = await client.query(`
       SELECT 
-        e.id, e.slug, e.title, e.description, 
-        e.start_date, e.end_date, e.start_time, e.end_time,
-        e.event_type, e.genre, e.ticket_price, e.rsvp_url,
-        e.featured, e.image_url,
-        v.name as venue_name, v.city as venue_city,
-        ARRAY_AGG(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL) as artists,
-        ARRAY_AGG(DISTINCT t.name) FILTER (WHERE t.name IS NOT NULL) as tags
+        e.id, e.slug, e.title, e.description, e.start_date, e.start_time,
+        e.image_url, e.ticket_price, e.event_type, e.status, e.genre,
+        v.name as venue_name, v.address, v.city, v.state,
+        array_agg(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL) as artists,
+        array_agg(DISTINCT t.name) FILTER (WHERE t.name IS NOT NULL) as tags
       FROM events e
       LEFT JOIN venues v ON e.venue_id = v.id
       LEFT JOIN event_artists ea ON e.id = ea.event_id
@@ -30,7 +29,7 @@ async function getPublishedEvents() {
       LEFT JOIN event_tags et ON e.id = et.event_id
       LEFT JOIN tags t ON et.tag_id = t.id
       WHERE e.status = 'published'
-      GROUP BY e.id, v.name, v.city
+      GROUP BY e.id, v.name, v.address, v.city, v.state
       ORDER BY e.start_date ASC, e.start_time ASC
     `);
     
@@ -42,19 +41,19 @@ async function getPublishedEvents() {
 
 const dbEvents = await getPublishedEvents();
 
-// Format events to match the old JSON structure
+// Format events to match the search functionality
 const events = dbEvents.map(event => ({
   slug: event.slug,
   title: event.title,
   artist: event.artists?.[0] || 'Unknown Artist',
   date: event.start_date,
-  location: event.venue_name || 'TBD',
+  location: `${event.venue_name || 'TBD'}${event.city ? ', ' + event.city : ''}`,
   description: event.description,
   genre: event.genre,
   ticketPrice: event.ticket_price,
-  rsvp: event.rsvp_url,
   tags: event.tags || [],
-  featured: event.featured
+  featured: event.featured,
+  image_url: event.image_url
 }));
 
 // Extract unique values for filter options
@@ -69,96 +68,95 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Search Events - Artist Events</title>
+    <meta name="description" content="Search and discover events by artist, genre, location, and more. Find your perfect event experience." />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      * {
         margin: 0;
-        padding: 20px;
-        background-color: #f8f9fa;
-        color: #333;
+        padding: 0;
+        box-sizing: border-box;
       }
 
-      .container {
-        max-width: 1200px;
-        margin: 0 auto;
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        line-height: 1.6;
+        color: #1e293b;
+        background: #f8fafc;
       }
 
-      /* Header */
-      .nav-header {
-        background: white;
-        padding: 1rem 0;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        position: sticky;
-        top: 0;
-        z-index: 100;
-        margin-bottom: 2rem;
+      /* Page Header */
+      .page-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 4rem 0 2rem;
+        text-align: center;
       }
 
-      .nav {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        max-width: 1200px;
+      .header-container {
+        max-width: 800px;
         margin: 0 auto;
         padding: 0 20px;
       }
 
-      .logo {
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: #1a1a1a;
-        text-decoration: none;
+      .page-title {
+        font-size: 3rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+        line-height: 1.1;
       }
 
-      .nav-links {
-        display: flex;
-        gap: 2rem;
-        list-style: none;
-      }
-
-      .nav-links a {
-        color: #666;
-        text-decoration: none;
-        font-weight: 500;
-        transition: color 0.3s;
-      }
-
-      .nav-links a:hover,
-      .nav-links a.active {
-        color: #1a1a1a;
-      }
-
-      .header {
-        text-align: center;
+      .page-subtitle {
+        font-size: 1.2rem;
+        opacity: 0.9;
         margin-bottom: 2rem;
-        padding: 2rem;
-        background: white;
-        border-radius: 15px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
       }
 
-      .header h1 {
-        color: #2c3e50;
-        margin-bottom: 0.5rem;
-        font-size: 2.5rem;
+      .search-stats {
+        display: flex;
+        justify-content: center;
+        gap: 2rem;
+        margin-top: 2rem;
+        flex-wrap: wrap;
       }
 
-      .header p {
-        color: #6c757d;
-        font-size: 1.1rem;
+      .stat-item {
+        text-align: center;
       }
 
+      .stat-number {
+        display: block;
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+      }
+
+      .stat-label {
+        font-size: 0.9rem;
+        opacity: 0.8;
+      }
+
+      /* Main Content */
+      .main-content {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 3rem 20px;
+      }
+
+      /* Search Container */
       .search-container {
         background: white;
-        border-radius: 15px;
+        border-radius: 20px;
         padding: 2rem;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-        margin-bottom: 2rem;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        margin-bottom: 3rem;
+        border: 1px solid rgba(226, 232, 240, 0.8);
       }
 
       .search-form {
         display: grid;
-        gap: 1.5rem;
+        gap: 2rem;
       }
 
       .search-input-group {
@@ -169,66 +167,74 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
 
       .search-input {
         flex: 1;
-        padding: 12px 16px;
-        border: 2px solid #e9ecef;
-        border-radius: 8px;
+        padding: 16px 20px;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
         font-size: 16px;
-        transition: border-color 0.3s;
+        transition: all 0.3s ease;
+        background: #f8fafc;
       }
 
       .search-input:focus {
         outline: none;
         border-color: #667eea;
         box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        background: white;
       }
 
       .search-btn {
-        padding: 12px 24px;
-        background: #667eea;
+        padding: 16px 32px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
         color: white;
         border: none;
-        border-radius: 8px;
+        border-radius: 12px;
         font-weight: 600;
         cursor: pointer;
-        transition: background 0.3s;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
       }
 
       .search-btn:hover {
-        background: #5a6fd8;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
       }
 
       .filters-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
+        gap: 1.5rem;
       }
 
       .filter-group {
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
+        gap: 0.75rem;
       }
 
       .filter-label {
         font-weight: 600;
-        color: #2c3e50;
+        color: #374151;
         font-size: 0.9rem;
         text-transform: uppercase;
         letter-spacing: 0.5px;
       }
 
       .filter-select {
-        padding: 10px 12px;
-        border: 2px solid #e9ecef;
-        border-radius: 6px;
-        background: white;
+        padding: 12px 16px;
+        border: 2px solid #e2e8f0;
+        border-radius: 10px;
+        background: #f8fafc;
         font-size: 14px;
-        transition: border-color 0.3s;
+        transition: all 0.3s ease;
+        cursor: pointer;
       }
 
       .filter-select:focus {
         outline: none;
         border-color: #667eea;
+        background: white;
       }
 
       .tags-section {
@@ -238,32 +244,35 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
       .tags-grid {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.5rem;
-        margin-top: 0.5rem;
+        gap: 0.75rem;
+        margin-top: 0.75rem;
       }
 
       .tag-filter {
-        background: #e3f2fd;
-        color: #1976d2;
-        padding: 0.5rem 0.75rem;
+        background: rgba(102, 126, 234, 0.1);
+        color: #667eea;
+        padding: 0.75rem 1rem;
         border: none;
         border-radius: 20px;
         font-size: 0.85rem;
         cursor: pointer;
-        transition: all 0.3s;
+        transition: all 0.3s ease;
         border: 2px solid transparent;
+        font-weight: 500;
       }
 
       .tag-filter:hover {
-        background: #bbdefb;
+        background: rgba(102, 126, 234, 0.2);
+        transform: translateY(-1px);
       }
 
       .tag-filter.active {
-        background: #1976d2;
+        background: #667eea;
         color: white;
-        border-color: #1976d2;
+        border-color: #667eea;
       }
 
+      /* Results Section */
       .results-section {
         margin-top: 2rem;
       }
@@ -272,135 +281,190 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 1.5rem;
-        padding: 1rem 1.5rem;
+        margin-bottom: 2rem;
+        padding: 1.5rem 2rem;
         background: white;
-        border-radius: 10px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        border-radius: 16px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        border: 1px solid rgba(226, 232, 240, 0.8);
       }
 
       .results-count {
         font-weight: 600;
-        color: #2c3e50;
+        color: #374151;
+        font-size: 1.1rem;
       }
 
       .clear-filters {
         color: #667eea;
         text-decoration: none;
-        font-weight: 500;
+        font-weight: 600;
         cursor: pointer;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        transition: all 0.3s ease;
       }
 
       .clear-filters:hover {
-        text-decoration: underline;
+        background: rgba(102, 126, 234, 0.1);
+        text-decoration: none;
       }
 
       .events-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-        gap: 1.5rem;
+        grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+        gap: 2rem;
       }
 
-      /* Global styles for dynamically generated event cards */
-      :global(.event-card) {
+      /* Event Cards */
+      .event-card {
         background: white;
-        border-radius: 12px;
-        padding: 1.5rem;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-        transition: all 0.3s;
+        border-radius: 20px;
+        padding: 2rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
         text-decoration: none;
         color: inherit;
-        border: 1px solid #f0f0f0;
+        border: 1px solid rgba(226, 232, 240, 0.8);
         display: block;
+        position: relative;
+        overflow: hidden;
       }
 
-      :global(.event-card:hover) {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+      .event-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+      }
+
+      .event-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
         text-decoration: none;
       }
 
-      :global(.event-title) {
-        font-size: 1.2rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-        color: #2c3e50;
+      .event-title {
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin-bottom: 0.75rem;
+        color: #1e293b;
+        line-height: 1.3;
       }
 
-      :global(.event-artist) {
+      .event-artist {
         color: #667eea;
-        font-weight: 500;
-        margin-bottom: 0.5rem;
-      }
-
-      :global(.event-meta) {
-        display: flex;
-        gap: 1rem;
+        font-weight: 600;
         margin-bottom: 1rem;
-        font-size: 0.9rem;
-        color: #6c757d;
-        flex-wrap: wrap;
+        font-size: 1.1rem;
       }
 
-      :global(.event-genre) {
-        background: #e8f5e8;
-        color: #2e7d32;
-        padding: 0.25rem 0.5rem;
+      .event-meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+        font-size: 0.9rem;
+        color: #64748b;
+      }
+
+      .event-meta-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .event-genre {
+        display: inline-flex;
+        align-items: center;
+        background: rgba(34, 197, 94, 0.1);
+        color: #15803d;
+        padding: 0.5rem 0.75rem;
         border-radius: 12px;
         font-size: 0.8rem;
-        font-weight: 500;
-      }
-
-      :global(.event-description) {
-        color: #666;
-        font-size: 0.9rem;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
+        font-weight: 600;
         margin-bottom: 1rem;
       }
 
-      :global(.event-tags) {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.25rem;
+      .event-description {
+        color: #64748b;
+        font-size: 0.95rem;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        margin-bottom: 1.5rem;
+        line-height: 1.5;
       }
 
-      :global(.event-tag) {
-        background: #f0f0f0;
-        color: #666;
-        padding: 0.2rem 0.5rem;
-        border-radius: 10px;
+      .event-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+
+      .event-tag {
+        background: #f1f5f9;
+        color: #64748b;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
         font-size: 0.75rem;
+        font-weight: 500;
+      }
+
+      .event-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 1rem;
+        border-top: 1px solid #f1f5f9;
+      }
+
+      .event-price {
+        font-weight: 700;
+        color: #667eea;
+        font-size: 1.1rem;
+      }
+
+      .event-link {
+        color: #667eea;
+        font-weight: 600;
+        font-size: 0.9rem;
       }
 
       .no-results {
         text-align: center;
-        padding: 3rem;
+        padding: 4rem 2rem;
         background: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        border-radius: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
       }
 
       .no-results h3 {
-        color: #6c757d;
+        color: #64748b;
         margin-bottom: 1rem;
+        font-size: 1.5rem;
       }
 
-      .back-link {
-        color: #667eea;
-        text-decoration: none;
-        font-weight: 500;
+      .no-results p {
+        color: #64748b;
         margin-bottom: 2rem;
-        display: inline-block;
       }
 
-      .back-link:hover {
-        text-decoration: underline;
-      }
-
+      /* Responsive Design */
       @media (max-width: 768px) {
+        .page-title {
+          font-size: 2.5rem;
+        }
+
+        .search-stats {
+          gap: 1rem;
+        }
+
         .filters-grid {
           grid-template-columns: 1fr;
         }
@@ -418,30 +482,72 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
           gap: 1rem;
           text-align: center;
         }
+
+        .event-meta {
+          grid-template-columns: 1fr;
+        }
+
+        .main-content {
+          padding: 2rem 16px;
+        }
+
+        .search-container {
+          padding: 1.5rem;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .page-title {
+          font-size: 2rem;
+        }
+
+        .search-input {
+          padding: 12px 16px;
+        }
+
+        .search-btn {
+          padding: 12px 24px;
+        }
+
+        .event-card {
+          padding: 1.5rem;
+        }
       }
     </style>
   </head>
   <body>
-    <!-- Navigation Header -->
-    <header class="nav-header">
-      <nav class="nav">
-        <a href="/" class="logo">🎵 Artist Events</a>
-        <ul class="nav-links">
-          <li><a href="/">Home</a></li>
-          <li><a href="/events">Events</a></li>
-          <li><a href="/blog">Blog</a></li>
-          <li><a href="/submit">Submit Event</a></li>
-          <li><a href="/search" class="active">Search</a></li>
-        </ul>
-      </nav>
-    </header>
+    <Navigation currentPage="search" />
 
-    <div class="container">
-      <div class="header">
-        <h1>Search Events</h1>
-        <p>Find the perfect event for you by searching through our collection</p>
+    <!-- Page Header -->
+    <section class="page-header">
+      <div class="header-container">
+        <h1 class="page-title">🔍 Search Events</h1>
+        <p class="page-subtitle">
+          Find the perfect event for you by searching through our collection of amazing experiences
+        </p>
+        <div class="search-stats">
+          <div class="stat-item">
+            <span class="stat-number">{events.length}</span>
+            <span class="stat-label">Total Events</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">{genres.length}</span>
+            <span class="stat-label">Genres</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">{artists.length}</span>
+            <span class="stat-label">Artists</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">{locations.length}</span>
+            <span class="stat-label">Locations</span>
+          </div>
+        </div>
       </div>
+    </section>
 
+    <!-- Main Content -->
+    <main class="main-content">
       <div class="search-container">
         <form class="search-form" id="searchForm">
           <div class="search-input-group">
@@ -449,14 +555,17 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
               type="text" 
               id="searchQuery" 
               class="search-input" 
-              placeholder="Search by title, artist, or description..."
+              placeholder="Search by title, artist, description, or location..."
             />
-            <button type="submit" class="search-btn">Search</button>
+            <button type="submit" class="search-btn">
+              <span>🔍</span>
+              Search
+            </button>
           </div>
 
           <div class="filters-grid">
             <div class="filter-group">
-              <label class="filter-label" for="genreFilter">Genre</label>
+              <label class="filter-label" for="genreFilter">🎵 Genre</label>
               <select id="genreFilter" class="filter-select">
                 <option value="">All Genres</option>
                 {genres.map(genre => (
@@ -466,7 +575,7 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
             </div>
 
             <div class="filter-group">
-              <label class="filter-label" for="artistFilter">Artist</label>
+              <label class="filter-label" for="artistFilter">🎤 Artist</label>
               <select id="artistFilter" class="filter-select">
                 <option value="">All Artists</option>
                 {artists.map(artist => (
@@ -476,7 +585,7 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
             </div>
 
             <div class="filter-group">
-              <label class="filter-label" for="locationFilter">Location</label>
+              <label class="filter-label" for="locationFilter">📍 Location</label>
               <select id="locationFilter" class="filter-select">
                 <option value="">All Locations</option>
                 {locations.map(location => (
@@ -486,25 +595,29 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
             </div>
 
             <div class="filter-group">
-              <label class="filter-label" for="dateFilter">Date</label>
+              <label class="filter-label" for="dateFilter">📅 Date</label>
               <select id="dateFilter" class="filter-select">
                 <option value="">All Dates</option>
-                <option value="upcoming">Upcoming</option>
+                <option value="upcoming">Upcoming Events</option>
                 <option value="past">Past Events</option>
+                <option value="this-week">This Week</option>
+                <option value="this-month">This Month</option>
               </select>
             </div>
           </div>
 
-          <div class="tags-section">
-            <div class="filter-label">Tags</div>
-            <div class="tags-grid">
-              {allTags.map(tag => (
-                <button type="button" class="tag-filter" data-tag={tag}>
-                  {tag}
-                </button>
-              ))}
+          {allTags.length > 0 && (
+            <div class="tags-section">
+              <div class="filter-label">🏷️ Tags</div>
+              <div class="tags-grid">
+                {allTags.slice(0, 15).map(tag => (
+                  <button type="button" class="tag-filter" data-tag={tag}>
+                    {tag}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </form>
       </div>
 
@@ -517,15 +630,60 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
         </div>
 
         <div class="events-grid" id="eventsGrid">
-          <!-- Events will be rendered by JavaScript -->
+          <!-- Server-side rendered events as fallback -->
+          {events.map(event => (
+            <a href={`/events/${event.slug}`} class="event-card">
+              <div class="event-title">{event.title}</div>
+              <div class="event-artist">🎤 {event.artist}</div>
+              
+              {event.genre && (
+                <div class="event-genre">🎵 {event.genre}</div>
+              )}
+              
+              <div class="event-meta">
+                <div class="event-meta-item">
+                  <span>📅</span>
+                  <span>{new Date(event.date).toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric',
+                    year: 'numeric'
+                  })}</span>
+                </div>
+                <div class="event-meta-item">
+                  <span>📍</span>
+                  <span>{event.location}</span>
+                </div>
+              </div>
+              
+              <div class="event-description">{event.description || 'No description available'}</div>
+              
+              {event.tags && event.tags.length > 0 && (
+                <div class="event-tags">
+                  {event.tags.slice(0, 4).map(tag => (
+                    <span class="event-tag">{tag}</span>
+                  ))}
+                  {event.tags.length > 4 && (
+                    <span class="event-tag">+{event.tags.length - 4}</span>
+                  )}
+                </div>
+              )}
+              
+              <div class="event-footer">
+                <div class="event-price">
+                  {!event.ticketPrice || event.ticketPrice === 0 ? 'Free' : `$${event.ticketPrice}`}
+                </div>
+                <div class="event-link">View Details →</div>
+              </div>
+            </a>
+          ))}
         </div>
 
         <div class="no-results" id="noResults" style="display: none;">
-          <h3>No events found</h3>
-          <p>Try adjusting your search criteria or clearing some filters.</p>
+          <h3>🔍 No events found</h3>
+          <p>Try adjusting your search criteria or clearing some filters to discover more events.</p>
         </div>
       </div>
-    </div>
+    </main>
 
     <!-- Set events data on window object FIRST -->
     <script define:vars={{ events }}>
@@ -537,6 +695,7 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
       let events = [];
       try {
         events = window.eventsData || [];
+        console.log('Loaded events data:', events.length, 'events');
       } catch (error) {
         console.error('Error loading events data:', error);
         events = [];
@@ -564,106 +723,167 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
       const clearFilters = document.getElementById('clearFilters');
 
       function performSearch() {
-        // Update active filters
-        activeFilters.query = searchQuery.value.toLowerCase().trim();
-        activeFilters.genre = genreFilter.value;
-        activeFilters.artist = artistFilter.value;
-        activeFilters.location = locationFilter.value;
-        activeFilters.date = dateFilter.value;
+        try {
+          console.log('Performing search with filters:', activeFilters);
+          
+          // Update active filters
+          activeFilters.query = searchQuery.value.toLowerCase().trim();
+          activeFilters.genre = genreFilter.value;
+          activeFilters.artist = artistFilter.value;
+          activeFilters.location = locationFilter.value;
+          activeFilters.date = dateFilter.value;
 
-        const filteredEvents = events.filter(event => {
-          // Text search
-          if (activeFilters.query) {
-            const searchText = `${event.title || ''} ${event.artist || ''} ${event.description || ''}`.toLowerCase();
-            if (!searchText.includes(activeFilters.query)) {
+          const filteredEvents = events.filter(event => {
+            // Text search
+            if (activeFilters.query) {
+              const searchText = `${event.title || ''} ${event.artist || ''} ${event.description || ''} ${event.location || ''}`.toLowerCase();
+              if (!searchText.includes(activeFilters.query)) {
+                return false;
+              }
+            }
+
+            // Genre filter
+            if (activeFilters.genre && event.genre !== activeFilters.genre) {
               return false;
             }
-          }
 
-          // Genre filter
-          if (activeFilters.genre && event.genre !== activeFilters.genre) {
-            return false;
-          }
-
-          // Artist filter
-          if (activeFilters.artist && event.artist !== activeFilters.artist) {
-            return false;
-          }
-
-          // Location filter
-          if (activeFilters.location && event.location !== activeFilters.location) {
-            return false;
-          }
-
-          // Date filter
-          if (activeFilters.date) {
-            const eventDate = new Date(event.date);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0); // Set to start of day
-            
-            if (activeFilters.date === 'upcoming' && eventDate < today) {
+            // Artist filter
+            if (activeFilters.artist && event.artist !== activeFilters.artist) {
               return false;
             }
-            if (activeFilters.date === 'past' && eventDate >= today) {
+
+            // Location filter
+            if (activeFilters.location && event.location !== activeFilters.location) {
               return false;
             }
-          }
 
-          // Tags filter
-          if (activeFilters.tags.length > 0) {
-            const eventTags = event.tags || [];
-            if (!activeFilters.tags.some(tag => eventTags.includes(tag))) {
-              return false;
+            // Date filter
+            if (activeFilters.date) {
+              const eventDate = new Date(event.date);
+              const today = new Date();
+              today.setHours(0, 0, 0, 0); // Set to start of day
+              
+              if (activeFilters.date === 'upcoming' && eventDate < today) {
+                return false;
+              }
+              if (activeFilters.date === 'past' && eventDate >= today) {
+                return false;
+              }
+              if (activeFilters.date === 'this-week') {
+                const weekFromNow = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+                if (eventDate < today || eventDate > weekFromNow) {
+                  return false;
+                }
+              }
+              if (activeFilters.date === 'this-month') {
+                const monthFromNow = new Date(today.getFullYear(), today.getMonth() + 1, today.getDate());
+                if (eventDate < today || eventDate > monthFromNow) {
+                  return false;
+                }
+              }
             }
-          }
 
-          return true;
-        });
+            // Tags filter
+            if (activeFilters.tags.length > 0) {
+              const eventTags = event.tags || [];
+              if (!activeFilters.tags.some(tag => eventTags.includes(tag))) {
+                return false;
+              }
+            }
 
-        displayResults(filteredEvents);
+            return true;
+          });
+
+          console.log('Filtered events:', filteredEvents.length, 'of', events.length);
+          displayResults(filteredEvents);
+        } catch (error) {
+          console.error('Error in performSearch:', error);
+        }
       }
 
       function displayResults(filteredEvents) {
-        // Update results count
-        resultsCount.textContent = `Showing ${filteredEvents.length} of ${events.length} events`;
-
-        if (filteredEvents.length === 0) {
-          eventsGrid.style.display = 'none';
-          noResults.style.display = 'block';
-        } else {
-          eventsGrid.style.display = 'grid';
-          noResults.style.display = 'none';
-
-          // Generate HTML for filtered events
-          const htmlContent = filteredEvents.map(event => {
-            const tagsHtml = event.tags && event.tags.length > 0 ? `
-              <div class="event-tags">
-                ${event.tags.slice(0, 3).map(tag => `<span class="event-tag">${tag}</span>`).join('')}
-                ${event.tags.length > 3 ? `<span class="event-tag">+${event.tags.length - 3} more</span>` : ''}
-              </div>
-            ` : '';
-
-            return `
-              <a href="/events/${event.slug}" class="event-card">
-                <div class="event-title">${event.title}</div>
-                <div class="event-artist">by ${event.artist}</div>
-                <div class="event-meta">
-                  <span><strong>Date:</strong> ${event.date}</span>
-                  <span><strong>Location:</strong> ${event.location}</span>
-                  ${event.genre ? `<span class="event-genre">${event.genre}</span>` : ''}
-                </div>
-                <div class="event-description">${event.description}</div>
-                ${tagsHtml}
-              </a>
-            `;
-          }).join('');
+        try {
+          console.log('Displaying results:', filteredEvents.length, 'events');
           
-          eventsGrid.innerHTML = htmlContent;
+          // Update results count
+          resultsCount.textContent = `Showing ${filteredEvents.length} of ${events.length} events`;
+
+          if (filteredEvents.length === 0) {
+            eventsGrid.style.display = 'none';
+            noResults.style.display = 'block';
+          } else {
+            eventsGrid.style.display = 'grid';
+            noResults.style.display = 'none';
+
+            // Generate HTML for filtered events
+            const htmlContent = filteredEvents.map(event => {
+              const tagsHtml = event.tags && event.tags.length > 0 ? `
+                <div class="event-tags">
+                  ${event.tags.slice(0, 4).map(tag => `<span class="event-tag">${tag}</span>`).join('')}
+                  ${event.tags.length > 4 ? `<span class="event-tag">+${event.tags.length - 4}</span>` : ''}
+                </div>
+              ` : '';
+
+              const formatPrice = (price) => {
+                if (!price || price === 0) return 'Free';
+                return `$${price}`;
+              };
+
+              const formatDate = (dateStr) => {
+                try {
+                  const date = new Date(dateStr);
+                  return date.toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric',
+                    year: 'numeric'
+                  });
+                } catch {
+                  return dateStr;
+                }
+              };
+
+              return `
+                <a href="/events/${event.slug}" class="event-card">
+                  <div class="event-title">${event.title}</div>
+                  <div class="event-artist">🎤 ${event.artist}</div>
+                  
+                  ${event.genre ? `<div class="event-genre">🎵 ${event.genre}</div>` : ''}
+                  
+                  <div class="event-meta">
+                    <div class="event-meta-item">
+                      <span>📅</span>
+                      <span>${formatDate(event.date)}</span>
+                    </div>
+                    <div class="event-meta-item">
+                      <span>📍</span>
+                      <span>${event.location}</span>
+                    </div>
+                  </div>
+                  
+                  <div class="event-description">${event.description || 'No description available'}</div>
+                  
+                  ${tagsHtml}
+                  
+                  <div class="event-footer">
+                    <div class="event-price">${formatPrice(event.ticketPrice)}</div>
+                    <div class="event-link">View Details →</div>
+                  </div>
+                </a>
+              `;
+            }).join('');
+            
+            eventsGrid.innerHTML = htmlContent;
+            console.log('Successfully updated events grid with', filteredEvents.length, 'events');
+          }
+        } catch (error) {
+          console.error('Error in displayResults:', error);
         }
       }
 
       // Event listeners
       document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM loaded, setting up event listeners');
+        
         // Search form submission
         const searchForm = document.getElementById('searchForm');
         if (searchForm) {
@@ -673,10 +893,12 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
           });
         }
 
-        // Real-time search on input
+        // Real-time search on input with debouncing
+        let searchTimeout;
         if (searchQuery) {
           searchQuery.addEventListener('input', () => {
-            performSearch();
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(performSearch, 300);
           });
         }
 
@@ -726,8 +948,8 @@ const allTags = [...new Set(events.flatMap(event => event.tags || []))];
           });
         }
 
-        // Initial search to show all events
-        performSearch();
+        // Don't run initial search - let server-side rendering show first
+        console.log('Search page initialized with', events.length, 'events');
       });
     </script>
   </body>
