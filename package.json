@@ -4,18 +4,37 @@
   "version": "0.0.1",
   "scripts": {
     "dev": "astro dev",
+    "start": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "start:aggregation": "node scripts/start-aggregation-system.js start",
+    "aggregation:status": "node scripts/start-aggregation-system.js status",
+    "aggregation:sync": "node scripts/manual-aggregation.js",
+    "aggregation:train": "node scripts/start-aggregation-system.js train",
+    "fetch:external": "node scripts/fetch-events-public-api.js",
+    "deploy": "./scripts/deploy-to-vercel.sh",
+    "deploy:vercel": "vercel --prod",
+    "test:sync": "node scripts/fetch-free-music-events.js"
   },
   "dependencies": {
+    "@astrojs/node": "^9.0.0",
+    "@astrojs/tailwind": "^5.1.1",
     "@astrojs/vercel": "^8.2.0",
     "@types/node": "^24.0.3",
     "astro": "^5.10.0",
+    "bcrypt": "^5.1.1",
     "bcryptjs": "^3.0.2",
     "dotenv": "^16.5.0",
     "node-fetch": "^3.3.2",
-    "pg": "^8.16.2"
+    "pg": "^8.13.1",
+    "jsonwebtoken": "^9.0.2",
+    "express": "^4.21.1",
+    "node-cron": "^3.0.3",
+    "natural": "^6.12.0",
+    "ml-matrix": "^6.10.7",
+    "string-similarity": "^4.0.4",
+    "tailwindcss": "^3.4.14"
   },
   "devDependencies": {
     "@types/pg": "^8.15.4"
