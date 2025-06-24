@@ -1,0 +1,657 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { Pool } from 'pg';
+
+// Helper function to parse cookies
+function parseCookie(cookieString, name) {
+  const cookies = cookieString.split(';').map(cookie => cookie.trim());
+  for (const cookie of cookies) {
+    const [cookieName, cookieValue] = cookie.split('=');
+    if (cookieName === name) {
+      return decodeURIComponent(cookieValue);
+    }
+  }
+  return null;
+}
+
+// Database connection string
+const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
+  'postgresql://ishanpathak@localhost:5432/artist_events';
+
+// Admin check - verify user is logged in and is admin
+const cookies = Astro.request.headers.get('cookie');
+let currentUser = null;
+let isAdmin = false;
+
+if (cookies) {
+  const sessionToken = parseCookie(cookies, 'session_token');
+  if (sessionToken) {
+    // Verify session and check admin status
+    const pool = new Pool({
+      connectionString,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    });
+
+    try {
+      const client = await pool.connect();
+      const sessionResult = await client.query(
+        'SELECT u.* FROM users u JOIN user_sessions s ON u.id = s.user_id WHERE s.session_token = $1 AND s.expires_at > NOW()',
+        [sessionToken]
+      );
+      
+      if (sessionResult.rows.length > 0) {
+        currentUser = sessionResult.rows[0];
+        // Check if user is admin - updated to use proper email and super admin check
+        isAdmin = currentUser.email === 'ishan.pathak2711@gmail.com' || 
+                 currentUser.user_type === 'admin' || 
+                 currentUser.is_super_admin === true;
+      }
+      client.release();
+    } catch (error) {
+      console.error('Admin auth error:', error);
+    }
+  }
+}
+
+// Redirect if not admin
+if (!isAdmin) {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: '/?error=unauthorized' }
+  });
+}
+
+// Get dashboard statistics
+async function getDashboardStats() {
+  const pool = new Pool({
+    connectionString,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  });
+
+  const client = await pool.connect();
+  try {
+    // Get various statistics
+    const [
+      totalUsers,
+      totalArtists,
+      totalAudience,
+      totalEvents,
+      publishedEvents,
+      draftEvents,
+      totalBlogPosts,
+      recentUsers,
+      recentEvents
+    ] = await Promise.all([
+      client.query('SELECT COUNT(*) as count FROM users'),
+      client.query("SELECT COUNT(*) as count FROM users WHERE user_type = 'artist'"),
+      client.query("SELECT COUNT(*) as count FROM users WHERE user_type = 'audience'"),
+      client.query('SELECT COUNT(*) as count FROM events'),
+      client.query("SELECT COUNT(*) as count FROM events WHERE status = 'published'"),
+      client.query("SELECT COUNT(*) as count FROM events WHERE status = 'draft'"),
+      client.query('SELECT COUNT(*) as count FROM blog_posts'),
+      client.query('SELECT id, name, email, user_type, created_at FROM users ORDER BY created_at DESC LIMIT 5'),
+      client.query(`
+        SELECT e.id, e.title, e.status, e.created_at, u.name as creator_name 
+        FROM events e 
+        JOIN users u ON e.created_by = u.id 
+        ORDER BY e.created_at DESC 
+        LIMIT 5
+      `)
+    ]);
+
+    return {
+      totalUsers: parseInt(totalUsers.rows[0].count),
+      totalArtists: parseInt(totalArtists.rows[0].count),
+      totalAudience: parseInt(totalAudience.rows[0].count),
+      totalEvents: parseInt(totalEvents.rows[0].count),
+      publishedEvents: parseInt(publishedEvents.rows[0].count),
+      draftEvents: parseInt(draftEvents.rows[0].count),
+      totalBlogPosts: parseInt(totalBlogPosts.rows[0].count),
+      recentUsers: recentUsers.rows,
+      recentEvents: recentEvents.rows
+    };
+  } finally {
+    client.release();
+  }
+}
+
+const stats = await getDashboardStats();
+---
+
+<Layout title="Admin Dashboard - Artist Events">
+  <div class="admin-dashboard">
+    <!-- Admin Header -->
+    <header class="admin-header">
+      <div class="admin-header-content">
+        <div class="admin-brand">
+          <h1>🛠️ Admin Dashboard</h1>
+          <p>Welcome back, {currentUser.name}</p>
+        </div>
+        <div class="admin-actions">
+          <a href="/" class="btn btn-secondary">← Back to Site</a>
+          <button id="logoutBtn" class="btn btn-danger">Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Admin Navigation -->
+    <nav class="admin-nav">
+      <div class="admin-nav-content">
+        <a href="/admin" class="admin-nav-link active">📊 Overview</a>
+        <a href="/admin/users" class="admin-nav-link">👥 Users</a>
+        <a href="/admin/events" class="admin-nav-link">🎪 Events</a>
+        <a href="/admin/blogs" class="admin-nav-link">📝 Blogs</a>
+        {currentUser?.email === 'ishan.pathak2711@gmail.com' && currentUser?.is_super_admin && (
+          <a href="/admin/admins" class="admin-nav-link">⚙️ Admins</a>
+        )}
+      </div>
+    </nav>
+
+    <!-- Dashboard Content -->
+    <main class="admin-main">
+      <!-- Statistics Cards -->
+      <section class="stats-section">
+        <h2>Platform Overview</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon">👥</div>
+            <div class="stat-content">
+              <h3>{stats.totalUsers}</h3>
+              <p>Total Users</p>
+            </div>
+          </div>
+          
+          <div class="stat-card">
+            <div class="stat-icon">🎨</div>
+            <div class="stat-content">
+              <h3>{stats.totalArtists}</h3>
+              <p>Artists</p>
+            </div>
+          </div>
+          
+          <div class="stat-card">
+            <div class="stat-icon">🎭</div>
+            <div class="stat-content">
+              <h3>{stats.totalAudience}</h3>
+              <p>Audience</p>
+            </div>
+          </div>
+          
+          <div class="stat-card">
+            <div class="stat-icon">🎪</div>
+            <div class="stat-content">
+              <h3>{stats.totalEvents}</h3>
+              <p>Total Events</p>
+            </div>
+          </div>
+          
+          <div class="stat-card">
+            <div class="stat-icon">✅</div>
+            <div class="stat-content">
+              <h3>{stats.publishedEvents}</h3>
+              <p>Published Events</p>
+            </div>
+          </div>
+          
+          <div class="stat-card">
+            <div class="stat-icon">📝</div>
+            <div class="stat-content">
+              <h3>{stats.draftEvents}</h3>
+              <p>Draft Events</p>
+            </div>
+          </div>
+          
+          <div class="stat-card">
+            <div class="stat-icon">📖</div>
+            <div class="stat-content">
+              <h3>{stats.totalBlogPosts}</h3>
+              <p>Blog Posts</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Recent Activity -->
+      <section class="recent-section">
+        <div class="recent-grid">
+          <!-- Recent Users -->
+          <div class="recent-card">
+            <h3>🆕 Recent Users</h3>
+            <div class="recent-list">
+              {stats.recentUsers.map(user => (
+                <div class="recent-item">
+                  <div class="recent-info">
+                    <strong>{user.name}</strong>
+                    <span class="recent-type">{user.user_type}</span>
+                  </div>
+                  <div class="recent-meta">
+                    <span>{user.email}</span>
+                    <span>{new Date(user.created_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <a href="/admin/users" class="recent-view-all">View All Users →</a>
+          </div>
+
+          <!-- Recent Events -->
+          <div class="recent-card">
+            <h3>🎪 Recent Events</h3>
+            <div class="recent-list">
+              {stats.recentEvents.map(event => (
+                <div class="recent-item">
+                  <div class="recent-info">
+                    <strong>{event.title}</strong>
+                    <span class={`recent-status status-${event.status}`}>{event.status}</span>
+                  </div>
+                  <div class="recent-meta">
+                    <span>by {event.creator_name}</span>
+                    <span>{new Date(event.created_at).toLocaleDateString()}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <a href="/admin/events" class="recent-view-all">View All Events →</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Actions -->
+      <section class="actions-section">
+        <h2>Quick Actions</h2>
+        <div class="actions-grid">
+          <a href="/admin/users?action=new" class="action-card">
+            <div class="action-icon">👤</div>
+            <h3>Add New User</h3>
+            <p>Create a new user account</p>
+          </a>
+          
+          <a href="/admin/events?action=moderate" class="action-card">
+            <div class="action-icon">🔍</div>
+            <h3>Moderate Events</h3>
+            <p>Review pending events</p>
+          </a>
+          
+          <a href="/admin/users?action=ban" class="action-card">
+            <div class="action-icon">🚫</div>
+            <h3>User Management</h3>
+            <p>Ban or manage users</p>
+          </a>
+          
+          <a href="/admin/settings" class="action-card">
+            <div class="action-icon">⚙️</div>
+            <h3>System Settings</h3>
+            <p>Configure platform settings</p>
+          </a>
+        </div>
+      </section>
+
+      <div class="quick-actions">
+        <a href="/admin/users" class="quick-action-card">
+          <div class="quick-action-icon">👥</div>
+          <h3>Manage Users</h3>
+          <p>View, edit, and moderate users</p>
+        </a>
+        
+        <a href="/admin/events" class="quick-action-card">
+          <div class="quick-action-icon">🎪</div>
+          <h3>Manage Events</h3>
+          <p>Review and moderate events</p>
+        </a>
+        
+        {currentUser?.email === 'ishan.pathak2711@gmail.com' && currentUser?.is_super_admin && (
+          <a href="/admin/admins" class="quick-action-card">
+            <div class="quick-action-icon">⚙️</div>
+            <h3>Manage Admins</h3>
+            <p>Grant and revoke admin access</p>
+          </a>
+        )}
+      </div>
+    </main>
+  </div>
+</Layout>
+
+<style>
+  .admin-dashboard {
+    min-height: 100vh;
+    background: #f8fafc;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  /* Admin Header */
+  .admin-header {
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 1rem 0;
+  }
+
+  .admin-header-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .admin-brand h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 0.25rem;
+  }
+
+  .admin-brand p {
+    color: #64748b;
+    margin: 0;
+  }
+
+  .admin-actions {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  /* Admin Navigation */
+  .admin-nav {
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0;
+  }
+
+  .admin-nav-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    display: flex;
+    gap: 2rem;
+  }
+
+  .admin-nav-link {
+    display: flex;
+    align-items: center;
+    padding: 1rem 0;
+    text-decoration: none;
+    color: #64748b;
+    font-weight: 500;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s ease;
+  }
+
+  .admin-nav-link:hover,
+  .admin-nav-link.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+  }
+
+  /* Main Content */
+  .admin-main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  /* Statistics */
+  .stats-section h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 1.5rem;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 3rem;
+  }
+
+  .stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: transform 0.3s ease;
+  }
+
+  .stat-card:hover {
+    transform: translateY(-2px);
+  }
+
+  .stat-icon {
+    font-size: 2rem;
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    border-radius: 12px;
+  }
+
+  .stat-content h3 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 0.25rem;
+  }
+
+  .stat-content p {
+    color: #64748b;
+    margin: 0;
+    font-size: 0.9rem;
+  }
+
+  /* Recent Activity */
+  .recent-section {
+    margin-bottom: 3rem;
+  }
+
+  .recent-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+
+  .recent-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  .recent-card h3 {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 1rem;
+  }
+
+  .recent-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .recent-item {
+    padding: 0.75rem;
+    background: #f8fafc;
+    border-radius: 8px;
+  }
+
+  .recent-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .recent-info strong {
+    color: #1e293b;
+  }
+
+  .recent-type,
+  .recent-status {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+
+  .recent-type {
+    background: #e0e7ff;
+    color: #3730a3;
+  }
+
+  .status-published {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .status-draft {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .recent-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    color: #64748b;
+  }
+
+  .recent-view-all {
+    color: #667eea;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.9rem;
+  }
+
+  .recent-view-all:hover {
+    text-decoration: underline;
+  }
+
+  /* Quick Actions */
+  .actions-section h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 1.5rem;
+  }
+
+  .actions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .action-card {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    text-decoration: none;
+    color: inherit;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+    text-align: center;
+  }
+
+  .action-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  }
+
+  .action-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+  }
+
+  .action-card h3 {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+  }
+
+  .action-card p {
+    color: #64748b;
+    margin: 0;
+  }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+
+  .btn-secondary {
+    background: #e2e8f0;
+    color: #475569;
+  }
+
+  .btn-secondary:hover {
+    background: #cbd5e1;
+  }
+
+  .btn-danger {
+    background: #ef4444;
+    color: white;
+  }
+
+  .btn-danger:hover {
+    background: #dc2626;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .admin-header-content {
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .admin-nav-content {
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .admin-main {
+      padding: 1rem;
+    }
+
+    .recent-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .stats-grid {
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+  }
+</style>
+
+<script>
+  // Logout functionality
+  document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+    try {
+      const response = await fetch('/api/auth/logout', { method: 'POST' });
+      if (response.ok) {
+        window.location.href = '/';
+      }
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  });
+</script> 

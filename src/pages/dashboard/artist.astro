@@ -1,5 +1,6 @@
 ---
 import Navigation from '../../components/Navigation.astro';
+import { Pool } from 'pg';
 
 // Helper function to parse cookies
 function parseCookie(cookieString, name) {
@@ -15,8 +16,19 @@ function parseCookie(cookieString, name) {
     return null;
 }
 
-// Check if user has a session cookie
+// Database connection
+const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
+  'postgresql://ishanpathak@localhost:5432/artist_events';
+
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+// Check if user has a session cookie and validate it
 const cookies = Astro.request.headers.get('cookie');
+let currentUser = null;
+
 if (!cookies) {
     return new Response(null, {
         status: 302,
@@ -32,7 +44,33 @@ if (!sessionToken) {
     });
 }
 
-// This page will validate authentication on the client side
+// Validate session and get user data
+try {
+    const client = await pool.connect();
+    const sessionResult = await client.query(
+        'SELECT u.* FROM users u JOIN user_sessions s ON u.id = s.user_id WHERE s.session_token = $1 AND s.expires_at > NOW()',
+        [sessionToken]
+    );
+    
+    if (sessionResult.rows.length === 0) {
+        client.release();
+        return new Response(null, {
+            status: 302,
+            headers: { Location: '/auth/login?redirect=/dashboard/artist' }
+        });
+    }
+    
+    currentUser = sessionResult.rows[0];
+    client.release();
+} catch (error) {
+    console.error('Session validation error:', error);
+    return new Response(null, {
+        status: 302,
+        headers: { Location: '/auth/login?redirect=/dashboard/artist' }
+    });
+}
+
+// If we reach here, user is authenticated
 ---
 
 <html lang="en">

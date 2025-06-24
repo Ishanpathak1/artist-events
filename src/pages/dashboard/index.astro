@@ -1,5 +1,6 @@
 ---
 import Layout from '../../layouts/Layout.astro';
+import { Pool } from 'pg';
 
 // Helper function to parse cookies
 function parseCookie(cookieString, name) {
@@ -15,8 +16,19 @@ function parseCookie(cookieString, name) {
     return null;
 }
 
-// Check if user has a session cookie
+// Database connection
+const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
+  'postgresql://ishanpathak@localhost:5432/artist_events';
+
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+// Check if user has a session cookie and validate it
 const cookies = Astro.request.headers.get('cookie');
+let currentUser = null;
+
 if (!cookies) {
     return new Response(null, {
         status: 302,
@@ -31,6 +43,44 @@ if (!sessionToken) {
         headers: { Location: '/auth/login?redirect=/dashboard' }
     });
 }
+
+// Validate session and get user data
+try {
+    const client = await pool.connect();
+    const sessionResult = await client.query(
+        'SELECT u.* FROM users u JOIN user_sessions s ON u.id = s.user_id WHERE s.session_token = $1 AND s.expires_at > NOW()',
+        [sessionToken]
+    );
+    
+    if (sessionResult.rows.length === 0) {
+        client.release();
+        return new Response(null, {
+            status: 302,
+            headers: { Location: '/auth/login?redirect=/dashboard' }
+        });
+    }
+    
+    currentUser = sessionResult.rows[0];
+    client.release();
+} catch (error) {
+    console.error('Session validation error:', error);
+    return new Response(null, {
+        status: 302,
+        headers: { Location: '/auth/login?redirect=/dashboard' }
+    });
+}
+
+// If we reach here, user is authenticated
+
+// Redirect artists to their specific dashboard
+if (currentUser.user_type === 'artist') {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: '/dashboard/artist' }
+  });
+}
+
+// Continue with general dashboard for audience members
 ---
 
 <Layout title="Dashboard - Artist Events">
@@ -48,7 +98,7 @@ if (!sessionToken) {
                 <div class="header-content">
                     <div class="user-info">
                         <div class="avatar">
-                            <img id="userAvatar" src="/default-avatar.png" alt="User Avatar" />
+                            <img id="userAvatar" src="/default-avatar.svg" alt="User Avatar" />
                         </div>
                         <div class="user-details">
                             <h1 id="welcomeMessage">Welcome back!</h1>
@@ -576,7 +626,7 @@ if (!sessionToken) {
     }
 </style>
 
-<script define:vars={{ user }}>
+<script define:vars={{ currentUser }}>
     document.addEventListener('DOMContentLoaded', function() {
         // Elements
         const loadingState = document.getElementById('loadingState');
@@ -588,7 +638,7 @@ if (!sessionToken) {
         const profileForm = document.getElementById('profileForm');
         const logoutBtn = document.getElementById('logoutBtn');
 
-        let currentUser = null;
+        let user = currentUser;
 
         // Initialize dashboard
         initializeDashboard();
@@ -605,7 +655,7 @@ if (!sessionToken) {
                     return;
                 }
 
-                currentUser = data.user;
+                user = data.user;
                 populateUserInterface();
                 loadDashboardStats();
                 loadActionButtons();
@@ -623,23 +673,23 @@ if (!sessionToken) {
 
         function populateUserInterface() {
             // Update user avatar and info
-            document.getElementById('userAvatar').src = currentUser.avatar_url || '/default-avatar.png';
-            document.getElementById('userAvatar').alt = currentUser.name;
-            document.getElementById('welcomeMessage').textContent = `Welcome back, ${currentUser.name}!`;
+            document.getElementById('userAvatar').src = user.avatar_url || '/default-avatar.svg';
+            document.getElementById('userAvatar').alt = user.name;
+            document.getElementById('welcomeMessage').textContent = `Welcome back, ${user.name}!`;
             document.getElementById('userType').textContent = 
-                currentUser.user_type === 'artist' ? '🎨 Artist' : '👥 Audience Member';
+                user.user_type === 'artist' ? '🎨 Artist' : '👥 Audience Member';
 
             // Populate profile form
-            document.getElementById('profileName').value = currentUser.name || '';
-            document.getElementById('profileBio').value = currentUser.bio || '';
-            document.getElementById('profileLocation').value = currentUser.location || '';
-            document.getElementById('profileWebsite').value = currentUser.website_url || '';
+            document.getElementById('profileName').value = user.name || '';
+            document.getElementById('profileBio').value = user.bio || '';
+            document.getElementById('profileLocation').value = user.location || '';
+            document.getElementById('profileWebsite').value = user.website_url || '';
         }
 
         function loadActionButtons() {
             const actionsGrid = document.getElementById('actionsGrid');
             
-            if (currentUser.user_type === 'artist') {
+            if (user.user_type === 'artist') {
                 actionsGrid.innerHTML = `
                     <a href="/events/create" class="action-card">
                         <div class="action-icon">🎪</div>
