@@ -1,31 +1,74 @@
 ---
-import fs from 'fs';
-import path from 'path';
+import { Pool } from 'pg';
 
 const { slug } = Astro.params;
 
-// Read events dynamically to ensure we get the latest data
-let events = [];
-try {
-  const eventsPath = path.join(process.cwd(), 'data', 'events.json');
-  const eventsData = fs.readFileSync(eventsPath, 'utf-8');
-  events = JSON.parse(eventsData);
-} catch (error) {
-  console.error('Error reading events:', error);
-  events = [];
+// Database connection
+const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
+  'postgresql://ishanpathak@localhost:5432/artist_events';
+
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+// Get event by slug from database
+async function getEventBySlug(slug: string) {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT 
+        e.*, 
+        v.name as venue_name, v.address, v.city as venue_city, 
+        v.website_url as venue_website,
+        ARRAY_AGG(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL) as artists,
+        ARRAY_AGG(DISTINCT t.name) FILTER (WHERE t.name IS NOT NULL) as tags
+      FROM events e
+      LEFT JOIN venues v ON e.venue_id = v.id
+      LEFT JOIN event_artists ea ON e.id = ea.event_id
+      LEFT JOIN artists a ON ea.artist_id = a.id
+      LEFT JOIN event_tags et ON e.id = et.event_id
+      LEFT JOIN tags t ON et.tag_id = t.id
+      WHERE e.slug = $1 AND e.status = 'published'
+      GROUP BY e.id, v.name, v.address, v.city, v.website_url
+    `, [slug]);
+    
+    return result.rows[0] || null;
+  } finally {
+    client.release();
+  }
 }
 
-const event = events.find((e) => e.slug === slug);
+const event = await getEventBySlug(slug);
 if (!event) throw new Error("Event not found");
 
+// Format the event data to match the old JSON structure
+const formattedEvent = {
+  slug: event.slug,
+  title: event.title,
+  artist: event.artists?.[0] || 'Unknown Artist',
+  date: event.start_date,
+  location: event.venue_name || event.custom_location || 'TBD',
+  description: event.description,
+  genre: event.genre,
+  ticketPrice: event.ticket_price,
+  rsvp: event.rsvp_url,
+  blog: event.blog_content,
+  instagram: event.instagram_handle,
+  x: event.twitter_handle,
+  linkedin: event.linkedin_url,
+  tags: event.tags || [],
+  featured: event.featured
+};
+
 // Create share messages
-const eventUrl = `${Astro.site || 'http://localhost:4321'}/events/${event.slug}`;
-const shareMessage = `Hey! Here's my event "${event.title}" on ${event.date} at ${event.location}. Make sure to RSVP and come to the event! ${eventUrl}`;
+const eventUrl = `${Astro.site || 'http://localhost:4321'}/events/${formattedEvent.slug}`;
+const shareMessage = `Hey! Here's my event "${formattedEvent.title}" on ${formattedEvent.date} at ${formattedEvent.location}. Make sure to RSVP and come to the event! ${eventUrl}`;
 ---
 
 <html>
   <head>
-    <title>{event.title} - Artist Events</title>
+    <title>{formattedEvent.title} - Artist Events</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
       body {
@@ -285,32 +328,32 @@ const shareMessage = `Hey! Here's my event "${event.title}" on ${event.date} at 
 
     <div class="event-container">
       <div class="event-header">
-        <h1 class="event-title">{event.title}</h1>
-        <p class="event-artist">by {event.artist}</p>
-        {event.genre && <span class="genre-badge">{event.genre}</span>}
+        <h1 class="event-title">{formattedEvent.title}</h1>
+        <p class="event-artist">by {formattedEvent.artist}</p>
+        {formattedEvent.genre && <span class="genre-badge">{formattedEvent.genre}</span>}
       </div>
 
       <div class="event-content">
         <div class="event-meta">
           <div class="meta-item">
             <span class="meta-label">Date</span>
-            <span class="meta-value">{event.date}</span>
+            <span class="meta-value">{formattedEvent.date}</span>
           </div>
           <div class="meta-item">
             <span class="meta-label">Location</span>
-            <span class="meta-value">{event.location}</span>
+            <span class="meta-value">{formattedEvent.location}</span>
           </div>
-          {event.ticketPrice && (
+          {formattedEvent.ticketPrice && (
             <div class="meta-item">
               <span class="meta-label">Ticket Price</span>
-              <span class="meta-value">{event.ticketPrice}</span>
+              <span class="meta-value">{formattedEvent.ticketPrice}</span>
             </div>
           )}
-          {event.rsvp && (
+          {formattedEvent.rsvp && (
             <div class="meta-item">
               <span class="meta-label">RSVP</span>
               <span class="meta-value">
-                <a href={event.rsvp} target="_blank">Get your tickets</a>
+                <a href={formattedEvent.rsvp} target="_blank">Get your tickets</a>
               </span>
             </div>
           )}
@@ -318,25 +361,25 @@ const shareMessage = `Hey! Here's my event "${event.title}" on ${event.date} at 
 
         <div class="description-section">
           <h2 class="section-title">About This Event</h2>
-          <p class="description">{event.description}</p>
+          <p class="description">{formattedEvent.description}</p>
         </div>
 
-        {event.blog && (
+        {formattedEvent.blog && (
           <div class="blog-section">
             <h2 class="section-title">From the Artist</h2>
             <div class="blog-content">
-              {event.blog.split('\n\n').map(paragraph => (
+              {formattedEvent.blog.split('\n\n').map(paragraph => (
                 <p>{paragraph}</p>
               ))}
             </div>
           </div>
         )}
 
-        {event.tags && event.tags.length > 0 && (
+        {formattedEvent.tags && formattedEvent.tags.length > 0 && (
           <div class="tags-section">
             <h2 class="section-title">Tags</h2>
             <div class="tags-container">
-              {event.tags.map(tag => (
+              {formattedEvent.tags.map(tag => (
                 <span class="tag">{tag}</span>
               ))}
             </div>

@@ -16,5 +16,8 @@
     "dotenv": "^16.5.0",
     "node-fetch": "^3.3.2",
     "pg": "^8.16.2"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.4"
   }
 }

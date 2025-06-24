@@ -1,17 +1,61 @@
 ---
-import fs from 'fs';
-import path from 'path';
+import { Pool } from 'pg';
 
-// Read events dynamically to ensure we get the latest data
-let events = [];
-try {
-  const eventsPath = path.join(process.cwd(), 'data', 'events.json');
-  const eventsData = fs.readFileSync(eventsPath, 'utf-8');
-  events = JSON.parse(eventsData);
-} catch (error) {
-  console.error('Error reading events:', error);
-  events = [];
+// Database connection
+const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
+  'postgresql://ishanpathak@localhost:5432/artist_events';
+
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+// Get all published events from database
+async function getPublishedEvents() {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT 
+        e.id, e.slug, e.title, e.description, 
+        e.start_date, e.end_date, e.start_time, e.end_time,
+        e.event_type, e.genre, e.ticket_price, e.rsvp_url,
+        e.featured, e.image_url,
+        v.name as venue_name, v.city as venue_city,
+        ARRAY_AGG(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL) as artists,
+        ARRAY_AGG(DISTINCT t.name) FILTER (WHERE t.name IS NOT NULL) as tags
+      FROM events e
+      LEFT JOIN venues v ON e.venue_id = v.id
+      LEFT JOIN event_artists ea ON e.id = ea.event_id
+      LEFT JOIN artists a ON ea.artist_id = a.id
+      LEFT JOIN event_tags et ON e.id = et.event_id
+      LEFT JOIN tags t ON et.tag_id = t.id
+      WHERE e.status = 'published'
+      GROUP BY e.id, v.name, v.city
+      ORDER BY e.start_date ASC, e.start_time ASC
+    `);
+    
+    return result.rows;
+  } finally {
+    client.release();
+  }
 }
+
+const dbEvents = await getPublishedEvents();
+
+// Format events to match the old JSON structure
+const events = dbEvents.map(event => ({
+  slug: event.slug,
+  title: event.title,
+  artist: event.artists?.[0] || 'Unknown Artist',
+  date: event.start_date,
+  location: event.venue_name || 'TBD',
+  description: event.description,
+  genre: event.genre,
+  ticketPrice: event.ticket_price,
+  rsvp: event.rsvp_url,
+  tags: event.tags || [],
+  featured: event.featured
+}));
 
 // Extract unique values for filter options
 const genres = [...new Set(events.map(event => event.genre).filter(Boolean))];
