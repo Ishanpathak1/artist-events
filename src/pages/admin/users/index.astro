@@ -179,7 +179,7 @@ const users = await getUsers();
                 <tr class="user-row" data-user-id={user.id} data-user-type={user.user_type} data-status={user.banned_at ? 'banned' : 'active'}>
                   <td class="user-info">
                     <div class="user-avatar">
-                      {user.name ? user.name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
+                      {(user.name && user.name.length > 0) ? user.name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
                     </div>
                     <div class="user-details">
                       <strong class="user-name">{user.name || 'No Name'}</strong>

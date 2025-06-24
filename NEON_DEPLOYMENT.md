@@ -32,7 +32,7 @@ The Artist Events application is now fully integrated with Neon PostgreSQL datab
 ### Environment Variables
 ```bash
 # Current .env configuration
-NEON_DATABASE_URL=postgresql://neondb_owner:npg_e8i0TtpgwzJW@ep-broad-forest-a413edir-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require
+NEON_DATABASE_URL=postgresql://example/neondb?sslmode=require
 DATABASE_URL=postgresql://ishanpathak@localhost:5432/artist_events
 NODE_ENV=development
 PORT=4321
@@ -110,14 +110,14 @@ UPDATE users SET name = COALESCE(first_name || ' ' || last_name, email) WHERE na
 ### For Vercel Deployment
 ```bash
 # Set environment variables in Vercel dashboard
-NEON_DATABASE_URL=postgresql://neondb_owner:npg_e8i0TtpgwzJW@ep-broad-forest-a413edir-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require
+NEON_DATABASE_URL=postgresql://example/neondb?sslmode=require
 NODE_ENV=production
 ```
 
 ### For Other Platforms
 ```bash
 # Export environment variables
-export NEON_DATABASE_URL="postgresql://neondb_owner:npg_e8i0TtpgwzJW@ep-broad-forest-a413edir-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require"
+export NEON_DATABASE_URL="postgresql://example/neondb?sslmode=require"
 export NODE_ENV=production
 
 # Deploy application

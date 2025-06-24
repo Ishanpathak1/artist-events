@@ -2,21 +2,33 @@
 import Layout from '../../layouts/Layout.astro';
 import { Pool } from 'pg';
 
-// Helper function to parse cookies
+// This page now only handles the initial session check.
+// The full user object will be fetched by the client-side script.
+
 function parseCookie(cookieString, name) {
+    if (!cookieString) return null;
     const cookies = cookieString.split(';').map(cookie => cookie.trim());
-    
     for (const cookie of cookies) {
         const [cookieName, cookieValue] = cookie.split('=');
         if (cookieName === name) {
             return decodeURIComponent(cookieValue);
         }
     }
-    
     return null;
 }
 
-// Database connection
+const cookies = Astro.request.headers.get('cookie');
+const sessionToken = parseCookie(cookies, 'session_token');
+
+if (!sessionToken) {
+    // If no token, redirect to login right away.
+    return new Response(null, {
+        status: 302,
+        headers: { Location: '/auth/login?redirect=/dashboard' }
+    });
+}
+
+// We still need to check for the user type to redirect artists.
 const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
   'postgresql://ishanpathak@localhost:5432/artist_events';
 
@@ -25,59 +37,37 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-// Check if user has a session cookie and validate it
-const cookies = Astro.request.headers.get('cookie');
-let currentUser = null;
-
-if (!cookies) {
-    return new Response(null, {
-        status: 302,
-        headers: { Location: '/auth/login?redirect=/dashboard' }
-    });
-}
-
-const sessionToken = parseCookie(cookies, 'session_token');
-if (!sessionToken) {
-    return new Response(null, {
-        status: 302,
-        headers: { Location: '/auth/login?redirect=/dashboard' }
-    });
-}
-
-// Validate session and get user data
 try {
     const client = await pool.connect();
     const sessionResult = await client.query(
-        'SELECT u.* FROM users u JOIN user_sessions s ON u.id = s.user_id WHERE s.session_token = $1 AND s.expires_at > NOW()',
+        'SELECT u.user_type FROM users u JOIN user_sessions s ON u.id = s.user_id WHERE s.session_token = $1 AND s.expires_at > NOW()',
         [sessionToken]
     );
+    client.release();
     
     if (sessionResult.rows.length === 0) {
-        client.release();
-        return new Response(null, {
-            status: 302,
-            headers: { Location: '/auth/login?redirect=/dashboard' }
-        });
+        // Invalid session, clear cookie and redirect
+        const headers = new Headers();
+        headers.append('Location', '/auth/login?error=invalid_session');
+        headers.append('Set-Cookie', 'session_token=; Path=/; HttpOnly; Max-Age=0');
+        return new Response(null, { status: 302, headers });
     }
     
-    currentUser = sessionResult.rows[0];
-    client.release();
+    const user = sessionResult.rows[0];
+    if (user.user_type === 'artist') {
+      return new Response(null, {
+        status: 302,
+        headers: { Location: '/dashboard/artist' }
+      });
+    }
+
 } catch (error) {
-    console.error('Session validation error:', error);
+    console.error('Dashboard pre-flight check error:', error);
+    // On error, better to redirect to login
     return new Response(null, {
         status: 302,
         headers: { Location: '/auth/login?redirect=/dashboard' }
     });
-}
-
-// If we reach here, user is authenticated
-
-// Redirect artists to their specific dashboard
-if (currentUser.user_type === 'artist') {
-  return new Response(null, {
-    status: 302,
-    headers: { Location: '/dashboard/artist' }
-  });
 }
 
 // Continue with general dashboard for audience members
@@ -737,7 +727,7 @@ if (currentUser.user_type === 'artist') {
     }
 </style>
 
-<script define:vars={{ currentUser }}>
+<script>
     document.addEventListener('DOMContentLoaded', function() {
         // Elements
         const loadingState = document.getElementById('loadingState');
@@ -749,9 +739,9 @@ if (currentUser.user_type === 'artist') {
         const profileForm = document.getElementById('profileForm');
         const logoutBtn = document.getElementById('logoutBtn');
 
-        let user = currentUser;
+        let user = null;
 
-        // Initialize dashboard
+        // Initialize dashboard by fetching user data from the validation API
         initializeDashboard();
 
         async function initializeDashboard() {
@@ -778,15 +768,15 @@ if (currentUser.user_type === 'artist') {
             } catch (error) {
                 console.error('Dashboard initialization error:', error);
                 // Redirect to login on error
-                window.location.href = '/auth/login?redirect=/dashboard';
+                loadingState.innerHTML = '<p>Could not load your dashboard. Please <a href="/auth/login">log in</a> again.</p>';
             }
         }
 
         function populateUserInterface() {
             // Update user avatar and info
             document.getElementById('userAvatar').src = user.avatar_url || '/default-avatar.svg';
-            document.getElementById('userAvatar').alt = user.name;
-            document.getElementById('welcomeMessage').textContent = `Welcome back, ${user.name}!`;
+            document.getElementById('userAvatar').alt = user.name || 'User Avatar';
+            document.getElementById('welcomeMessage').textContent = `Welcome back, ${user.name || 'User'}!`;
             document.getElementById('userType').textContent = 
                 user.user_type === 'artist' ? '🎨 Artist' : '👥 Audience Member';
 
