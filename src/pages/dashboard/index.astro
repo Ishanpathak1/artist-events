@@ -1,0 +1,864 @@
+---
+import Layout from '../../layouts/Layout.astro';
+
+// Helper function to parse cookies
+function parseCookie(cookieString, name) {
+    const cookies = cookieString.split(';').map(cookie => cookie.trim());
+    
+    for (const cookie of cookies) {
+        const [cookieName, cookieValue] = cookie.split('=');
+        if (cookieName === name) {
+            return decodeURIComponent(cookieValue);
+        }
+    }
+    
+    return null;
+}
+
+// Check if user has a session cookie
+const cookies = Astro.request.headers.get('cookie');
+if (!cookies) {
+    return new Response(null, {
+        status: 302,
+        headers: { Location: '/auth/login?redirect=/dashboard' }
+    });
+}
+
+const sessionToken = parseCookie(cookies, 'session_token');
+if (!sessionToken) {
+    return new Response(null, {
+        status: 302,
+        headers: { Location: '/auth/login?redirect=/dashboard' }
+    });
+}
+---
+
+<Layout title="Dashboard - Artist Events">
+    <div class="dashboard-container">
+        <!-- Loading State -->
+        <div id="loadingState" class="loading-container">
+            <div class="loading-spinner-large"></div>
+            <p>Loading your dashboard...</p>
+        </div>
+
+        <!-- Dashboard Content (will be shown after loading) -->
+        <div id="dashboardContent" style="display: none;">
+            <!-- Header -->
+            <header class="dashboard-header">
+                <div class="header-content">
+                    <div class="user-info">
+                        <div class="avatar">
+                            <img id="userAvatar" src="/default-avatar.png" alt="User Avatar" />
+                        </div>
+                        <div class="user-details">
+                            <h1 id="welcomeMessage">Welcome back!</h1>
+                            <p class="user-type" id="userType">Loading...</p>
+                        </div>
+                    </div>
+                    
+                    <div class="header-actions">
+                        <button id="profileBtn" class="btn btn-secondary">
+                            Edit Profile
+                        </button>
+                        <button id="logoutBtn" class="btn btn-outline">
+                            Logout
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Main Content -->
+            <main class="dashboard-main">
+                <!-- Stats Cards -->
+                <section class="stats-section">
+                    <h2>Your Statistics</h2>
+                    <div class="stats-grid" id="statsGrid">
+                        <div class="stat-card loading">
+                            <div class="stat-icon">📊</div>
+                            <div class="stat-content">
+                                <div class="stat-number" id="totalEvents">-</div>
+                                <div class="stat-label">Total Events</div>
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card loading">
+                            <div class="stat-icon">❤️</div>
+                            <div class="stat-content">
+                                <div class="stat-number" id="eventLikes">-</div>
+                                <div class="stat-label">Event Likes</div>
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card loading">
+                            <div class="stat-icon">👥</div>
+                            <div class="stat-content">
+                                <div class="stat-number" id="followers">-</div>
+                                <div class="stat-label">Followers</div>
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card loading">
+                            <div class="stat-icon">📝</div>
+                            <div class="stat-content">
+                                <div class="stat-number" id="blogPosts">-</div>
+                                <div class="stat-label">Blog Posts</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Quick Actions -->
+                <section class="actions-section">
+                    <h2>Quick Actions</h2>
+                    <div class="actions-grid" id="actionsGrid">
+                        <!-- Actions will be populated based on user type -->
+                    </div>
+                </section>
+
+                <!-- Recent Activity -->
+                <section class="activity-section">
+                    <h2>Recent Activity</h2>
+                    <div class="activity-list" id="activityList">
+                        <div class="activity-item">
+                            <div class="activity-icon">🔄</div>
+                            <div class="activity-content">
+                                <p>Loading your recent activity...</p>
+                                <span class="activity-time">Just now</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <!-- Profile Modal -->
+    <div id="profileModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Profile</h2>
+                <button class="modal-close" id="closeProfileModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="profileForm">
+                    <div class="form-group">
+                        <label for="name">Full Name</label>
+                        <input type="text" id="profileName" name="name" required />
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="bio">Bio</label>
+                        <textarea id="profileBio" name="bio" placeholder="Tell us about yourself..."></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="location">Location</label>
+                        <input type="text" id="profileLocation" name="location" placeholder="City, Country" />
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="website">Website</label>
+                        <input type="url" id="profileWebsite" name="website" placeholder="https://yourwebsite.com" />
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancelProfile">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</Layout>
+
+<style>
+    .dashboard-container {
+        min-height: 100vh;
+        background: #f8fafc;
+    }
+
+    /* Loading State */
+    .loading-container {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #f8fafc;
+    }
+
+    .loading-spinner-large {
+        width: 48px;
+        height: 48px;
+        border: 4px solid #e2e8f0;
+        border-top: 4px solid #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 16px;
+    }
+
+    .loading-container p {
+        color: #718096;
+        font-size: 16px;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    .dashboard-header {
+        background: white;
+        border-bottom: 1px solid #e2e8f0;
+        padding: 24px 0;
+    }
+
+    .header-content {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .avatar {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        overflow: hidden;
+        border: 3px solid #667eea;
+    }
+
+    .avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .user-details h1 {
+        color: #1a202c;
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 4px;
+    }
+
+    .user-type {
+        color: #718096;
+        font-size: 14px;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 12px;
+    }
+
+    .dashboard-main {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 32px 24px;
+    }
+
+    .stats-section,
+    .actions-section,
+    .activity-section {
+        margin-bottom: 48px;
+    }
+
+    .stats-section h2,
+    .actions-section h2,
+    .activity-section h2 {
+        color: #1a202c;
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 24px;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 24px;
+    }
+
+    .stat-card {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        transition: transform 0.2s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+    }
+
+    .stat-card.loading {
+        opacity: 0.7;
+    }
+
+    .stat-icon {
+        font-size: 32px;
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f0f4ff;
+        border-radius: 50%;
+    }
+
+    .stat-number {
+        font-size: 28px;
+        font-weight: 700;
+        color: #1a202c;
+        margin-bottom: 4px;
+    }
+
+    .stat-label {
+        color: #718096;
+        font-size: 14px;
+    }
+
+    .actions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 24px;
+    }
+
+    .action-card {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        text-decoration: none;
+        color: inherit;
+        transition: all 0.2s ease;
+        border: none;
+        cursor: pointer;
+        width: 100%;
+    }
+
+    .action-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .action-icon {
+        font-size: 32px;
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #667eea;
+        color: white;
+        border-radius: 50%;
+    }
+
+    .action-content h3 {
+        color: #1a202c;
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+
+    .action-content p {
+        color: #718096;
+        font-size: 14px;
+    }
+
+    .activity-list {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+    }
+
+    .activity-item {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 20px 24px;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .activity-item:last-child {
+        border-bottom: none;
+    }
+
+    .activity-icon {
+        font-size: 20px;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f0f4ff;
+        border-radius: 50%;
+    }
+
+    .activity-content p {
+        color: #1a202c;
+        font-size: 14px;
+        margin-bottom: 4px;
+    }
+
+    .activity-time {
+        color: #718096;
+        font-size: 12px;
+    }
+
+    .btn {
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border: none;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .btn-primary {
+        background: #667eea;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: #5a67d8;
+    }
+
+    .btn-secondary {
+        background: #e2e8f0;
+        color: #4a5568;
+    }
+
+    .btn-secondary:hover {
+        background: #cbd5e0;
+    }
+
+    .btn-outline {
+        background: transparent;
+        color: #667eea;
+        border: 1px solid #667eea;
+    }
+
+    .btn-outline:hover {
+        background: #667eea;
+        color: white;
+    }
+
+    /* Modal Styles */
+    .modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+
+    .modal-content {
+        background: white;
+        border-radius: 12px;
+        width: 90%;
+        max-width: 500px;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 24px;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .modal-header h2 {
+        color: #1a202c;
+        font-size: 20px;
+        font-weight: 600;
+        margin: 0;
+    }
+
+    .modal-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: #718096;
+    }
+
+    .modal-body {
+        padding: 24px;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+    .form-group label {
+        display: block;
+        color: #374151;
+        font-size: 14px;
+        font-weight: 500;
+        margin-bottom: 6px;
+    }
+
+    .form-group input,
+    .form-group textarea {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 16px;
+        transition: border-color 0.2s ease;
+        box-sizing: border-box;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus {
+        outline: none;
+        border-color: #667eea;
+    }
+
+    .form-group textarea {
+        resize: vertical;
+        min-height: 100px;
+    }
+
+    .form-actions {
+        display: flex;
+        gap: 12px;
+        justify-content: flex-end;
+        margin-top: 24px;
+    }
+
+    @media (max-width: 768px) {
+        .header-content {
+            flex-direction: column;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        .dashboard-main {
+            padding: 24px 16px;
+        }
+
+        .stats-grid,
+        .actions-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .form-actions {
+            flex-direction: column;
+        }
+    }
+</style>
+
+<script define:vars={{ user }}>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Elements
+        const loadingState = document.getElementById('loadingState');
+        const dashboardContent = document.getElementById('dashboardContent');
+        const profileBtn = document.getElementById('profileBtn');
+        const profileModal = document.getElementById('profileModal');
+        const closeProfileModal = document.getElementById('closeProfileModal');
+        const cancelProfile = document.getElementById('cancelProfile');
+        const profileForm = document.getElementById('profileForm');
+        const logoutBtn = document.getElementById('logoutBtn');
+
+        let currentUser = null;
+
+        // Initialize dashboard
+        initializeDashboard();
+
+        async function initializeDashboard() {
+            try {
+                // First validate the session and get user data
+                const response = await fetch('/api/auth/validate');
+                const data = await response.json();
+
+                if (!data.authenticated || !data.user) {
+                    // No valid session, redirect to login
+                    window.location.href = '/auth/login?redirect=/dashboard';
+                    return;
+                }
+
+                currentUser = data.user;
+                populateUserInterface();
+                loadDashboardStats();
+                loadActionButtons();
+                
+                // Hide loading and show dashboard
+                loadingState.style.display = 'none';
+                dashboardContent.style.display = 'block';
+
+            } catch (error) {
+                console.error('Dashboard initialization error:', error);
+                // Redirect to login on error
+                window.location.href = '/auth/login?redirect=/dashboard';
+            }
+        }
+
+        function populateUserInterface() {
+            // Update user avatar and info
+            document.getElementById('userAvatar').src = currentUser.avatar_url || '/default-avatar.png';
+            document.getElementById('userAvatar').alt = currentUser.name;
+            document.getElementById('welcomeMessage').textContent = `Welcome back, ${currentUser.name}!`;
+            document.getElementById('userType').textContent = 
+                currentUser.user_type === 'artist' ? '🎨 Artist' : '👥 Audience Member';
+
+            // Populate profile form
+            document.getElementById('profileName').value = currentUser.name || '';
+            document.getElementById('profileBio').value = currentUser.bio || '';
+            document.getElementById('profileLocation').value = currentUser.location || '';
+            document.getElementById('profileWebsite').value = currentUser.website_url || '';
+        }
+
+        function loadActionButtons() {
+            const actionsGrid = document.getElementById('actionsGrid');
+            
+            if (currentUser.user_type === 'artist') {
+                actionsGrid.innerHTML = `
+                    <a href="/events/create" class="action-card">
+                        <div class="action-icon">🎪</div>
+                        <div class="action-content">
+                            <h3>Create Event</h3>
+                            <p>Add a new event to your calendar</p>
+                        </div>
+                    </a>
+                    
+                    <a href="/blog/create" class="action-card">
+                        <div class="action-icon">✍️</div>
+                        <div class="action-content">
+                            <h3>Write Blog Post</h3>
+                            <p>Share your thoughts and experiences</p>
+                        </div>
+                    </a>
+                    
+                    <a href="/dashboard/events" class="action-card">
+                        <div class="action-icon">📋</div>
+                        <div class="action-content">
+                            <h3>Manage Events</h3>
+                            <p>Edit and view your events</p>
+                        </div>
+                    </a>
+                    
+                    <a href="/dashboard/profile" class="action-card">
+                        <div class="action-icon">⚙️</div>
+                        <div class="action-content">
+                            <h3>Profile Settings</h3>
+                            <p>Manage your account and preferences</p>
+                        </div>
+                    </a>
+                `;
+            } else {
+                actionsGrid.innerHTML = `
+                    <a href="/events" class="action-card">
+                        <div class="action-icon">🔍</div>
+                        <div class="action-content">
+                            <h3>Discover Events</h3>
+                            <p>Find amazing events near you</p>
+                        </div>
+                    </a>
+                    
+                    <a href="/dashboard/bookmarks" class="action-card">
+                        <div class="action-icon">🔖</div>
+                        <div class="action-content">
+                            <h3>My Bookmarks</h3>
+                            <p>View your saved events</p>
+                        </div>
+                    </a>
+                    
+                    <button id="switchToArtistBtn" class="action-card">
+                        <div class="action-icon">🎨</div>
+                        <div class="action-content">
+                            <h3>Become an Artist</h3>
+                            <p>Start creating your own events</p>
+                        </div>
+                    </button>
+                    
+                    <a href="/dashboard/profile" class="action-card">
+                        <div class="action-icon">⚙️</div>
+                        <div class="action-content">
+                            <h3>Profile Settings</h3>
+                            <p>Manage your account and preferences</p>
+                        </div>
+                    </a>
+                `;
+
+                // Add event listener for switch to artist button
+                const switchToArtistBtn = document.getElementById('switchToArtistBtn');
+                if (switchToArtistBtn) {
+                    switchToArtistBtn.addEventListener('click', switchToArtist);
+                }
+            }
+        }
+
+        // Profile modal
+        profileBtn.addEventListener('click', () => {
+            profileModal.style.display = 'flex';
+        });
+
+        closeProfileModal.addEventListener('click', () => {
+            profileModal.style.display = 'none';
+        });
+
+        cancelProfile.addEventListener('click', () => {
+            profileModal.style.display = 'none';
+        });
+
+        // Close modal when clicking outside
+        profileModal.addEventListener('click', (e) => {
+            if (e.target === profileModal) {
+                profileModal.style.display = 'none';
+            }
+        });
+
+        // Profile form submission
+        profileForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(profileForm);
+            const profileData = {
+                name: formData.get('name'),
+                bio: formData.get('bio'),
+                location: formData.get('location'),
+                website_url: formData.get('website')
+            };
+
+            try {
+                const response = await fetch('/api/auth/profile', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(profileData)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('Profile updated successfully!');
+                    profileModal.style.display = 'none';
+                    location.reload();
+                } else {
+                    alert(data.error || 'Failed to update profile');
+                }
+            } catch (error) {
+                console.error('Profile update error:', error);
+                alert('Connection error. Please try again.');
+            }
+        });
+
+        // Logout
+        logoutBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/auth/logout', {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    window.location.href = '/';
+                } else {
+                    alert('Logout failed. Please try again.');
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+                alert('Logout failed. Please try again.');
+            }
+        });
+
+        // Switch to artist
+        async function switchToArtist() {
+            if (confirm('Switch to artist account? You can change back anytime.')) {
+                try {
+                    const response = await fetch('/api/auth/profile', {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ userType: 'artist' })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        alert('Welcome to the artist community!');
+                        location.reload();
+                    } else {
+                        alert(data.error || 'Failed to switch account type');
+                    }
+                } catch (error) {
+                    console.error('Account switch error:', error);
+                    alert('Connection error. Please try again.');
+                }
+            }
+        }
+
+        // Load dashboard stats
+        async function loadDashboardStats() {
+            try {
+                const response = await fetch('/api/dashboard/stats');
+                const data = await response.json();
+
+                if (data.success) {
+                    updateStats(data.stats);
+                    updateActivity();
+                }
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        function updateStats(stats) {
+            document.getElementById('totalEvents').textContent = 
+                stats.events?.total_events || 0;
+            document.getElementById('eventLikes').textContent = 
+                stats.eventLikes || 0;
+            document.getElementById('followers').textContent = 
+                stats.followers || 0;
+            document.getElementById('blogPosts').textContent = 
+                stats.blogs?.total_posts || 0;
+
+            // Remove loading state
+            document.querySelectorAll('.stat-card').forEach(card => {
+                card.classList.remove('loading');
+            });
+        }
+
+        function updateActivity() {
+            const activityList = document.getElementById('activityList');
+            activityList.innerHTML = `
+                <div class="activity-item">
+                    <div class="activity-icon">👋</div>
+                    <div class="activity-content">
+                        <p>Welcome to your dashboard!</p>
+                        <span class="activity-time">Just now</span>
+                    </div>
+                </div>
+            `;
+        }
+    });
+</script> 

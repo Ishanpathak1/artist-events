@@ -1,0 +1,604 @@
+---
+import Layout from '../../layouts/Layout.astro';
+
+// Helper function to parse cookies
+function parseCookie(cookieString, name) {
+    const cookies = cookieString.split(';').map(cookie => cookie.trim());
+    
+    for (const cookie of cookies) {
+        const [cookieName, cookieValue] = cookie.split('=');
+        if (cookieName === name) {
+            return decodeURIComponent(cookieValue);
+        }
+    }
+    
+    return null;
+}
+
+// Check if user already has a session cookie
+const cookies = Astro.request.headers.get('cookie');
+if (cookies) {
+    const sessionToken = parseCookie(cookies, 'session_token');
+    if (sessionToken) {
+        return new Response(null, {
+            status: 302,
+            headers: { Location: '/dashboard' }
+        });
+    }
+}
+---
+
+<Layout title="Sign Up - Artist Events">
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h1>Join Artist Events</h1>
+                <p>Create your account and start discovering amazing events</p>
+            </div>
+
+            <form id="registerForm" class="auth-form">
+                <div class="form-group">
+                    <label for="name">Full Name</label>
+                    <input 
+                        type="text" 
+                        id="name" 
+                        name="name" 
+                        required 
+                        placeholder="Enter your full name"
+                        autocomplete="name"
+                    />
+                    <div class="error-message" id="nameError"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input 
+                        type="email" 
+                        id="email" 
+                        name="email" 
+                        required 
+                        placeholder="Enter your email"
+                        autocomplete="email"
+                    />
+                    <div class="error-message" id="emailError"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input 
+                        type="password" 
+                        id="password" 
+                        name="password" 
+                        required 
+                        placeholder="Create a strong password"
+                        autocomplete="new-password"
+                    />
+                    <div class="password-hint">
+                        At least 8 characters with uppercase, lowercase, and number
+                    </div>
+                    <div class="error-message" id="passwordError"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="confirmPassword">Confirm Password</label>
+                    <input 
+                        type="password" 
+                        id="confirmPassword" 
+                        name="confirmPassword" 
+                        required 
+                        placeholder="Confirm your password"
+                        autocomplete="new-password"
+                    />
+                    <div class="error-message" id="confirmPasswordError"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Account Type</label>
+                    <div class="user-type-selection">
+                        <label class="user-type-option">
+                            <input type="radio" name="userType" value="audience" checked />
+                            <div class="user-type-card">
+                                <div class="user-type-icon">👥</div>
+                                <div class="user-type-content">
+                                    <h3>Audience Member</h3>
+                                    <p>Discover and attend amazing events</p>
+                                </div>
+                            </div>
+                        </label>
+                        
+                        <label class="user-type-option">
+                            <input type="radio" name="userType" value="artist" />
+                            <div class="user-type-card">
+                                <div class="user-type-icon">🎨</div>
+                                <div class="user-type-content">
+                                    <h3>Artist</h3>
+                                    <p>Create and promote your events</p>
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="terms" name="terms" required />
+                        <span class="checkmark"></span>
+                        I agree to the <a href="/terms" target="_blank">Terms of Service</a> and <a href="/privacy" target="_blank">Privacy Policy</a>
+                    </label>
+                    <div class="error-message" id="termsError"></div>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="registerBtn">
+                    <span class="btn-text">Create Account</span>
+                    <div class="loading-spinner" style="display: none;"></div>
+                </button>
+
+                <div class="form-message" id="formMessage"></div>
+            </form>
+
+            <div class="auth-footer">
+                <p>Already have an account? <a href="/auth/login">Sign in here</a></p>
+            </div>
+        </div>
+    </div>
+</Layout>
+
+<style>
+    .auth-container {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 20px;
+    }
+
+    .auth-card {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        padding: 40px;
+        width: 100%;
+        max-width: 500px;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .auth-header {
+        text-align: center;
+        margin-bottom: 32px;
+    }
+
+    .auth-header h1 {
+        color: #1a202c;
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 8px;
+    }
+
+    .auth-header p {
+        color: #718096;
+        font-size: 14px;
+    }
+
+    .auth-form {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .form-group label {
+        color: #374151;
+        font-size: 14px;
+        font-weight: 500;
+        margin-bottom: 6px;
+    }
+
+    .form-group input[type="text"],
+    .form-group input[type="email"],
+    .form-group input[type="password"] {
+        padding: 12px;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        font-size: 16px;
+        transition: border-color 0.2s ease;
+    }
+
+    .form-group input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .form-group input.error {
+        border-color: #ef4444;
+    }
+
+    .password-hint {
+        font-size: 12px;
+        color: #6b7280;
+        margin-top: 4px;
+    }
+
+    .error-message {
+        color: #ef4444;
+        font-size: 12px;
+        margin-top: 4px;
+        min-height: 16px;
+    }
+
+    .user-type-selection {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-top: 8px;
+    }
+
+    .user-type-option {
+        cursor: pointer;
+    }
+
+    .user-type-option input[type="radio"] {
+        display: none;
+    }
+
+    .user-type-card {
+        border: 2px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 16px;
+        text-align: center;
+        transition: all 0.2s ease;
+        background: #f9fafb;
+    }
+
+    .user-type-option input:checked + .user-type-card {
+        border-color: #667eea;
+        background: #f0f4ff;
+    }
+
+    .user-type-card:hover {
+        border-color: #d1d5db;
+        transform: translateY(-1px);
+    }
+
+    .user-type-icon {
+        font-size: 32px;
+        margin-bottom: 8px;
+    }
+
+    .user-type-content h3 {
+        color: #1f2937;
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+
+    .user-type-content p {
+        color: #6b7280;
+        font-size: 12px;
+        line-height: 1.4;
+    }
+
+    .checkbox-label {
+        display: flex;
+        align-items: flex-start;
+        cursor: pointer;
+        font-size: 14px;
+        color: #374151;
+        line-height: 1.5;
+    }
+
+    .checkbox-label input[type="checkbox"] {
+        position: absolute;
+        opacity: 0;
+        cursor: pointer;
+    }
+
+    .checkmark {
+        height: 16px;
+        width: 16px;
+        background-color: #fff;
+        border: 2px solid #d1d5db;
+        border-radius: 3px;
+        margin-right: 8px;
+        margin-top: 2px;
+        position: relative;
+        transition: all 0.2s ease;
+        flex-shrink: 0;
+    }
+
+    .checkbox-label input:checked ~ .checkmark {
+        background-color: #667eea;
+        border-color: #667eea;
+    }
+
+    .checkbox-label input:checked ~ .checkmark:after {
+        content: "";
+        position: absolute;
+        left: 4px;
+        top: 1px;
+        width: 4px;
+        height: 8px;
+        border: solid white;
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+    }
+
+    .checkbox-label a {
+        color: #667eea;
+        text-decoration: none;
+    }
+
+    .checkbox-label a:hover {
+        text-decoration: underline;
+    }
+
+    .btn {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .btn-primary {
+        background: #667eea;
+        color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+        background: #5a67d8;
+        transform: translateY(-1px);
+    }
+
+    .btn:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .loading-spinner {
+        width: 20px;
+        height: 20px;
+        border: 2px solid transparent;
+        border-top: 2px solid currentColor;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    .form-message {
+        padding: 12px;
+        border-radius: 8px;
+        font-size: 14px;
+        text-align: center;
+        margin-top: 8px;
+        display: none;
+    }
+
+    .form-message.success {
+        background: #d1fae5;
+        color: #065f46;
+        border: 1px solid #a7f3d0;
+    }
+
+    .form-message.error {
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fca5a5;
+    }
+
+    .auth-footer {
+        text-align: center;
+        margin-top: 24px;
+        padding-top: 24px;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .auth-footer p {
+        color: #6b7280;
+        font-size: 14px;
+    }
+
+    .auth-footer a {
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 500;
+    }
+
+    .auth-footer a:hover {
+        text-decoration: underline;
+    }
+
+    @media (max-width: 480px) {
+        .auth-container {
+            padding: 10px;
+        }
+        
+        .auth-card {
+            padding: 24px;
+        }
+
+        .user-type-selection {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('registerForm');
+        const nameInput = document.getElementById('name');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const confirmPasswordInput = document.getElementById('confirmPassword');
+        const termsInput = document.getElementById('terms');
+        const registerBtn = document.getElementById('registerBtn');
+        const btnText = registerBtn.querySelector('.btn-text');
+        const spinner = registerBtn.querySelector('.loading-spinner');
+        const formMessage = document.getElementById('formMessage');
+
+        // Form validation
+        function validateEmail(email) {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        }
+
+        function validatePassword(password) {
+            return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d@$!%*?&]{8,}$/.test(password);
+        }
+
+        function showFieldError(field, message) {
+            field.classList.add('error');
+            const errorElement = document.getElementById(field.id + 'Error');
+            if (errorElement) {
+                errorElement.textContent = message;
+            }
+        }
+
+        function clearFieldError(field) {
+            field.classList.remove('error');
+            const errorElement = document.getElementById(field.id + 'Error');
+            if (errorElement) {
+                errorElement.textContent = '';
+            }
+        }
+
+        function showMessage(message, type = 'error') {
+            formMessage.textContent = message;
+            formMessage.className = `form-message ${type}`;
+            formMessage.style.display = 'block';
+        }
+
+        function hideMessage() {
+            formMessage.style.display = 'none';
+        }
+
+        function setLoading(loading) {
+            registerBtn.disabled = loading;
+            if (loading) {
+                btnText.style.display = 'none';
+                spinner.style.display = 'block';
+            } else {
+                btnText.style.display = 'block';
+                spinner.style.display = 'none';
+            }
+        }
+
+        // Clear errors on input
+        nameInput.addEventListener('input', () => clearFieldError(nameInput));
+        emailInput.addEventListener('input', () => clearFieldError(emailInput));
+        passwordInput.addEventListener('input', () => clearFieldError(passwordInput));
+        confirmPasswordInput.addEventListener('input', () => clearFieldError(confirmPasswordInput));
+        termsInput.addEventListener('change', () => clearFieldError(termsInput));
+
+        // Form submission
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            // Clear previous errors
+            clearFieldError(nameInput);
+            clearFieldError(emailInput);
+            clearFieldError(passwordInput);
+            clearFieldError(confirmPasswordInput);
+            clearFieldError(termsInput);
+            hideMessage();
+
+            // Validation
+            let hasErrors = false;
+
+            if (!nameInput.value.trim()) {
+                showFieldError(nameInput, 'Full name is required');
+                hasErrors = true;
+            } else if (nameInput.value.trim().length < 2) {
+                showFieldError(nameInput, 'Name must be at least 2 characters');
+                hasErrors = true;
+            }
+
+            if (!emailInput.value.trim()) {
+                showFieldError(emailInput, 'Email is required');
+                hasErrors = true;
+            } else if (!validateEmail(emailInput.value.trim())) {
+                showFieldError(emailInput, 'Please enter a valid email address');
+                hasErrors = true;
+            }
+
+            if (!passwordInput.value) {
+                showFieldError(passwordInput, 'Password is required');
+                hasErrors = true;
+            } else if (!validatePassword(passwordInput.value)) {
+                showFieldError(passwordInput, 'Password must meet the requirements above');
+                hasErrors = true;
+            }
+
+            if (!confirmPasswordInput.value) {
+                showFieldError(confirmPasswordInput, 'Please confirm your password');
+                hasErrors = true;
+            } else if (passwordInput.value !== confirmPasswordInput.value) {
+                showFieldError(confirmPasswordInput, 'Passwords do not match');
+                hasErrors = true;
+            }
+
+            if (!termsInput.checked) {
+                showFieldError(termsInput, 'You must agree to the terms and conditions');
+                hasErrors = true;
+            }
+
+            if (hasErrors) {
+                return;
+            }
+
+            setLoading(true);
+
+            try {
+                const userType = document.querySelector('input[name="userType"]:checked').value;
+
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: nameInput.value.trim(),
+                        email: emailInput.value.trim(),
+                        password: passwordInput.value,
+                        confirmPassword: confirmPasswordInput.value,
+                        userType: userType
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showMessage('Account created successfully! Please sign in to continue.', 'success');
+                    
+                    // Redirect to login after short delay
+                    setTimeout(() => {
+                        window.location.href = '/auth/login?message=Registration successful';
+                    }, 2000);
+                } else {
+                    showMessage(data.error || 'Registration failed. Please try again.');
+                }
+            } catch (error) {
+                console.error('Registration error:', error);
+                showMessage('Connection error. Please try again.');
+            } finally {
+                setLoading(false);
+            }
+        });
+    });
+</script> 

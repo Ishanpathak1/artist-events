@@ -132,5 +132,20 @@
       "folk"
     ],
     "featured": false
+  },
+  {
+    "slug": "test",
+    "artist": "test",
+    "title": "test",
+    "date": "2025-06-28",
+    "location": "test",
+    "description": "testing",
+    "genre": "Jazz",
+    "ticketPrice": "free",
+    "blog": "test",
+    "tags": [
+      "test"
+    ],
+    "featured": false
   }
 ]

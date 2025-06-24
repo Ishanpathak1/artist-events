@@ -12,8 +12,8 @@ const DB_CONFIG = {
   host: 'localhost',
   port: 5432,
   database: 'artist_events',
-  user: 'your_username',
-  password: 'your_password'
+  user: 'ishanpathak',
+  password: ''
 };
 
 /**
@@ -149,21 +149,41 @@ async function migrateEvent(client, jsonEvent) {
     // 5. Handle tags
     if (jsonEvent.tags && Array.isArray(jsonEvent.tags)) {
       for (const tagName of jsonEvent.tags) {
-        // Find or create tag
+        // Find existing tag first
         let tagResult = await client.query(
-          'SELECT id FROM tags WHERE name = $1',
+          'SELECT id FROM tags WHERE name ILIKE $1',
           [tagName]
         );
 
         let tagId;
         if (tagResult.rows.length === 0) {
-          // Create new tag
+          // Create new tag with unique slug handling
+          const baseSlug = generateSlug(tagName);
+          let finalSlug = baseSlug;
+          let counter = 1;
+          
+          // Check for slug conflicts and resolve them
+          while (true) {
+            const slugCheck = await client.query(
+              'SELECT id FROM tags WHERE slug = $1',
+              [finalSlug]
+            );
+            
+            if (slugCheck.rows.length === 0) {
+              break; // Slug is unique
+            }
+            
+            finalSlug = `${baseSlug}-${counter}`;
+            counter++;
+          }
+          
           const newTag = await client.query(`
             INSERT INTO tags (name, slug, created_at)
             VALUES ($1, $2, CURRENT_TIMESTAMP)
             RETURNING id
-          `, [tagName, generateSlug(tagName)]);
+          `, [tagName, finalSlug]);
           tagId = newTag.rows[0].id;
+          console.log(`Created tag: ${tagName} (slug: ${finalSlug})`);
         } else {
           tagId = tagResult.rows[0].id;
         }
@@ -277,7 +297,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   console.log('4. Install pg package: npm install pg');
   console.log('');
   
-  // Uncomment these lines when ready to run migration
-  // await migrateEvents();
-  // await insertSampleSources();
+  // Run the migration
+  await migrateEvents();
+  await insertSampleSources();
 } 

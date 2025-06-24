@@ -9,7 +9,12 @@
     "astro": "astro"
   },
   "dependencies": {
+    "@astrojs/vercel": "^8.2.0",
     "@types/node": "^24.0.3",
-    "astro": "^5.10.0"
+    "astro": "^5.10.0",
+    "bcryptjs": "^3.0.2",
+    "dotenv": "^16.5.0",
+    "node-fetch": "^3.3.2",
+    "pg": "^8.16.2"
   }
 }

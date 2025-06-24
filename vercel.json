@@ -1,0 +1,9 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "astro",
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "regions": ["iad1"]
+} 
