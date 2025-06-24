@@ -1,8 +1,59 @@
 ---
-import blogs from '../../../data/blogs.json';
+import { Pool } from 'pg';
 
-// Sort blogs by date (newest first)
-const sortedBlogs = blogs.sort((a, b) => new Date(b.publishedDate) - new Date(a.publishedDate));
+// Database connection
+const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
+  'postgresql://ishanpathak@localhost:5432/artist_events';
+
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+// Get all published blog posts from database
+async function getPublishedBlogs() {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT 
+        bp.id, bp.slug, bp.title, bp.content, bp.excerpt,
+        bp.featured, bp.view_count, bp.like_count, bp.comment_count,
+        bp.tags, bp.published_at, bp.created_at,
+        u.name as author_name
+      FROM blog_posts bp
+      JOIN users u ON bp.author_id = u.id
+      WHERE bp.status = 'published'
+      ORDER BY bp.published_at DESC, bp.created_at DESC
+    `);
+    
+    return result.rows;
+  } finally {
+    client.release();
+  }
+}
+
+const dbBlogs = await getPublishedBlogs();
+
+// Format blogs to match the old JSON structure
+const blogs = dbBlogs.map(blog => ({
+  slug: blog.slug,
+  title: blog.title,
+  author: blog.author_name,
+  authorBio: '', // Not stored in current schema
+  authorImage: '',
+  publishedDate: blog.published_at ? blog.published_at.toISOString().split('T')[0] : blog.created_at.toISOString().split('T')[0],
+  readTime: `${Math.ceil(blog.content.split(' ').length / 200)} min read`, // Estimate reading time
+  excerpt: blog.excerpt,
+  content: blog.content,
+  category: 'General', // Default category since not in current schema
+  tags: blog.tags || [],
+  featured: blog.featured,
+  likes: blog.like_count || 0,
+  comments: blog.comment_count || 0
+}));
+
+// Sort blogs by date (newest first) - already sorted by query
+const sortedBlogs = blogs;
 const featuredBlogs = sortedBlogs.filter(blog => blog.featured);
 const regularBlogs = sortedBlogs.filter(blog => !blog.featured);
 

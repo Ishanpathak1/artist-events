@@ -1,18 +1,102 @@
 ---
-import blogs from '../../../data/blogs.json';
+import { Pool } from 'pg';
 
 const { slug } = Astro.params;
-const blog = blogs.find((b) => b.slug === slug);
-if (!blog) throw new Error("Blog post not found");
+
+// Database connection
+const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
+  'postgresql://ishanpathak@localhost:5432/artist_events';
+
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+// Get blog post by slug from database
+async function getBlogBySlug(slug: string) {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT 
+        bp.id, bp.slug, bp.title, bp.content, bp.excerpt,
+        bp.featured, bp.view_count, bp.like_count, bp.comment_count,
+        bp.tags, bp.published_at, bp.created_at,
+        u.name as author_name
+      FROM blog_posts bp
+      JOIN users u ON bp.author_id = u.id
+      WHERE bp.slug = $1 AND bp.status = 'published'
+    `, [slug]);
+    
+    return result.rows[0] || null;
+  } finally {
+    client.release();
+  }
+}
+
+// Get related blogs (same author or similar tags, different post)
+async function getRelatedBlogs(currentSlug: string, authorName: string, tags: string[]) {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT 
+        bp.id, bp.slug, bp.title, bp.excerpt,
+        bp.featured, bp.like_count, bp.comment_count,
+        bp.tags, bp.published_at, bp.created_at,
+        u.name as author_name
+      FROM blog_posts bp
+      JOIN users u ON bp.author_id = u.id
+      WHERE bp.status = 'published' 
+        AND bp.slug != $1
+        AND (u.name = $2 OR bp.tags && $3)
+      ORDER BY bp.published_at DESC
+      LIMIT 3
+    `, [currentSlug, authorName, tags || []]);
+    
+    return result.rows;
+  } finally {
+    client.release();
+  }
+}
+
+const dbBlog = await getBlogBySlug(slug);
+if (!dbBlog) throw new Error("Blog post not found");
+
+// Format blog to match the old JSON structure
+const blog = {
+  slug: dbBlog.slug,
+  title: dbBlog.title,
+  author: dbBlog.author_name,
+  authorBio: '', // Not stored in current schema
+  authorImage: '',
+  publishedDate: dbBlog.published_at ? dbBlog.published_at.toISOString().split('T')[0] : dbBlog.created_at.toISOString().split('T')[0],
+  readTime: `${Math.ceil(dbBlog.content.split(' ').length / 200)} min read`, // Estimate reading time
+  excerpt: dbBlog.excerpt,
+  content: dbBlog.content,
+  category: 'General', // Default category since not in current schema
+  tags: dbBlog.tags || [],
+  featured: dbBlog.featured,
+  likes: dbBlog.like_count || 0,
+  comments: dbBlog.comment_count || 0
+};
 
 // Create share messages
 const blogUrl = `${Astro.site || 'http://localhost:4321'}/blog/${blog.slug}`;
 const shareMessage = `Check out this amazing story: "${blog.title}" by ${blog.author} on Artist Events! ${blogUrl}`;
 
-// Get related blogs (same category, different post)
-const relatedBlogs = blogs
-  .filter(b => b.category === blog.category && b.slug !== blog.slug)
-  .slice(0, 3);
+// Get related blogs
+const dbRelatedBlogs = await getRelatedBlogs(blog.slug, blog.author, blog.tags);
+const relatedBlogs = dbRelatedBlogs.map(relatedBlog => ({
+  slug: relatedBlog.slug,
+  title: relatedBlog.title,
+  author: relatedBlog.author_name,
+  publishedDate: relatedBlog.published_at ? relatedBlog.published_at.toISOString().split('T')[0] : relatedBlog.created_at.toISOString().split('T')[0],
+  readTime: `${Math.ceil(relatedBlog.content ? relatedBlog.content.split(' ').length / 200 : 5)} min read`,
+  excerpt: relatedBlog.excerpt,
+  category: 'General',
+  tags: relatedBlog.tags || [],
+  likes: relatedBlog.like_count || 0,
+  comments: relatedBlog.comment_count || 0
+}));
 ---
 
 <html lang="en">
