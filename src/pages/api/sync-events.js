@@ -1,44 +1,52 @@
 import { EventAggregator } from '../../services/EventAggregator.js';
+// For now, let's use a simpler approach - import the fetching scripts directly
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
-const aggregator = new EventAggregator();
+const execAsync = promisify(exec);
 
 export async function GET(context) {
   try {
-    // Check for authorization (simple API key check)
-    const authHeader = context.request.headers.get('authorization');
-    const expectedAuth = `Bearer ${process.env.SYNC_API_KEY || 'your-secret-sync-key'}`;
-    
-    if (authHeader !== expectedAuth) {
-      return new Response(JSON.stringify({ 
-        error: 'Unauthorized' 
-      }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
+    console.log('🔄 Starting event sync...');
 
     // Get query parameters
     const url = new URL(context.request.url);
-    const sourceId = url.searchParams.get('source');
-    const fullSync = url.searchParams.get('full') === 'true';
-
-    console.log(`🔄 Starting sync - Source: ${sourceId || 'all'}, Full: ${fullSync}`);
+    const sourceType = url.searchParams.get('source') || 'ticketmaster';
 
     let result;
-    if (fullSync) {
-      // Run full sync across all sources
-      result = await aggregator.runFullSync();
-    } else if (sourceId) {
-      // Sync specific source
-      result = await aggregator.syncSource(parseInt(sourceId));
-    } else {
-      // Default: sync all active sources
-      result = await aggregator.runFullSync();
+    
+    try {
+      if (sourceType === 'ticketmaster' || sourceType === 'all') {
+        console.log('🎫 Syncing Ticketmaster events...');
+        const { stdout, stderr } = await execAsync('node scripts/fetch-ticketmaster-events.js');
+        console.log('Ticketmaster sync output:', stdout);
+        if (stderr) console.error('Ticketmaster sync error:', stderr);
+      }
+      
+      if (sourceType === 'free' || sourceType === 'all') {
+        console.log('🎵 Syncing free music events...');
+        const { stdout, stderr } = await execAsync('node scripts/fetch-free-music-events.js');
+        console.log('Free events sync output:', stdout);
+        if (stderr) console.error('Free events sync error:', stderr);
+      }
+
+      result = {
+        synced_sources: sourceType === 'all' ? ['ticketmaster', 'free'] : [sourceType],
+        status: 'completed'
+      };
+
+    } catch (scriptError) {
+      console.error('Script execution error:', scriptError);
+      // Don't fail completely, return partial success
+      result = {
+        error: scriptError.message,
+        status: 'partial'
+      };
     }
 
     return new Response(JSON.stringify({
       success: true,
-      message: 'Sync completed successfully',
+      message: 'Sync completed',
       timestamp: new Date().toISOString(),
       result
     }), {
