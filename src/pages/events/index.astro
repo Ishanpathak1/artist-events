@@ -11,14 +11,15 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-// Get all published events from database
+// Get all published events from database (including aggregated ones)
 async function getPublishedEvents() {
   const client = await pool.connect();
   try {
     const result = await client.query(`
       SELECT 
         e.id, e.slug, e.title, e.description, e.start_date, e.start_time,
-        e.image_url, e.ticket_price, e.event_type, e.status,
+        e.image_url, e.ticket_price, e.event_type, e.status, e.source_type,
+        e.external_id, e.ticket_url, e.custom_location,
         v.name as venue_name, v.address, v.city, v.state,
         array_agg(DISTINCT a.name) as artists,
         array_agg(DISTINCT t.name) as tags
@@ -43,8 +44,12 @@ const events = await getPublishedEvents();
 
 // Get unique values for filters
 const eventTypes = [...new Set(events.map(e => e.event_type).filter(Boolean))];
-const cities = [...new Set(events.map(e => e.city).filter(Boolean))];
+const cities = [...new Set(events.map(e => e.city || e.custom_location).filter(Boolean))];
 const allTags = [...new Set(events.flatMap(e => e.tags || []).filter(Boolean))];
+
+// Calculate stats
+const userSubmittedCount = events.filter(e => e.source_type === 'user' || !e.source_type).length;
+const aggregatedCount = events.filter(e => e.source_type === 'api').length;
 ---
 
 <html lang="en">
@@ -145,6 +150,86 @@ const allTags = [...new Set(events.flatMap(e => e.tags || []).filter(Boolean))];
         max-width: 1200px;
         margin: 0 auto;
         padding: 3rem 20px;
+      }
+
+      /* Sync Section */
+      .sync-section {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 20px;
+        padding: 2rem;
+        margin-bottom: 3rem;
+        color: white;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .sync-section::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="1" fill="rgba(255,255,255,0.1)"/></svg>');
+        background-size: 30px 30px;
+        opacity: 0.1;
+      }
+
+      .sync-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+        position: relative;
+        z-index: 1;
+      }
+
+      .sync-info h2 {
+        margin: 0 0 0.5rem 0;
+        font-size: 1.4rem;
+        font-weight: 700;
+      }
+
+      .sync-description {
+        margin: 0;
+        opacity: 0.9;
+        font-size: 0.95rem;
+      }
+
+      .sync-controls {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+      }
+
+      .sync-progress {
+        margin-top: 1.5rem;
+        position: relative;
+        z-index: 1;
+      }
+
+      .progress-bar {
+        width: 100%;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 3px;
+        overflow: hidden;
+        margin-bottom: 0.5rem;
+      }
+
+      .progress-fill {
+        height: 100%;
+        background: white;
+        width: 0%;
+        transition: width 0.3s ease;
+        border-radius: 3px;
+      }
+
+      .progress-text {
+        margin: 0;
+        font-size: 0.9rem;
+        opacity: 0.9;
       }
 
       /* Advanced Filter Bar */
@@ -381,6 +466,28 @@ const allTags = [...new Set(events.flatMap(e => e.tags || []).filter(Boolean))];
         letter-spacing: 0.5px;
       }
 
+      .event-source-badge {
+        position: absolute;
+        bottom: 1rem;
+        left: 1rem;
+        padding: 0.3rem 0.7rem;
+        border-radius: 15px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      }
+
+      .event-source-badge.api {
+        background: rgba(239, 68, 68, 0.9);
+        color: white;
+      }
+
+      .event-source-badge.user {
+        background: rgba(16, 185, 129, 0.9);
+        color: white;
+      }
+
       .event-content {
         padding: 1.5rem;
       }
@@ -606,19 +713,19 @@ const allTags = [...new Set(events.flatMap(e => e.tags || []).filter(Boolean))];
         <div class="header-stats">
           <div class="stat-item">
             <span class="stat-number">{events.length}</span>
+            <span class="stat-label">Total Events</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">{aggregatedCount}</span>
             <span class="stat-label">Live Events</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">{userSubmittedCount}</span>
+            <span class="stat-label">Community</span>
           </div>
           <div class="stat-item">
             <span class="stat-number">{cities.length}</span>
             <span class="stat-label">Cities</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-number">{eventTypes.length}</span>
-            <span class="stat-label">Event Types</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-number">{allTags.length}</span>
-            <span class="stat-label">Genres</span>
           </div>
         </div>
       </div>
@@ -626,6 +733,32 @@ const allTags = [...new Set(events.flatMap(e => e.tags || []).filter(Boolean))];
 
     <!-- Main Content -->
     <main class="main-content">
+      <!-- Event Sync Section -->
+      <section class="sync-section">
+        <div class="sync-header">
+          <div class="sync-info">
+            <h2 class="sync-title">🔄 Live Event Sync</h2>
+            <p class="sync-description">Fetch the latest events from Ticketmaster, Eventbrite, and other sources</p>
+          </div>
+          <div class="sync-controls">
+            <button class="btn btn-primary" id="syncEventsBtn">
+              <span id="syncIcon">🚀</span>
+              <span id="syncText">Sync Latest Events</span>
+            </button>
+            <button class="btn btn-secondary" id="refreshEventsBtn">
+              <span>🔄</span>
+              Refresh
+            </button>
+          </div>
+        </div>
+        <div class="sync-progress" id="syncProgress" style="display: none;">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <p class="progress-text" id="progressText">Syncing events...</p>
+        </div>
+      </section>
+
       <!-- Advanced Filter Section -->
       <section class="filter-section">
         <div class="filter-header">
@@ -724,7 +857,7 @@ const allTags = [...new Set(events.flatMap(e => e.tags || []).filter(Boolean))];
       {events.length > 0 ? (
         <section class="events-grid" id="eventsGrid">
           {events.map(event => (
-            <a href={`/events/${event.slug}`} class="event-card" data-event-type={event.event_type} data-city={event.city} data-price={event.ticket_price || 0}>
+            <a href={event.ticket_url || `/events/${event.slug}`} class="event-card" data-event-type={event.event_type} data-city={event.city || event.custom_location} data-price={event.ticket_price || 0} data-source={event.source_type || 'user'} target={event.ticket_url ? '_blank' : '_self'}>
               <div class="event-image">
                 <div class="event-date-badge">
                   {new Date(event.start_date).toLocaleDateString('en-US', { 
@@ -736,6 +869,9 @@ const allTags = [...new Set(events.flatMap(e => e.tags || []).filter(Boolean))];
                 {event.event_type && (
                   <div class="event-type-badge">{event.event_type}</div>
                 )}
+                <div class={`event-source-badge ${event.source_type || 'user'}`}>
+                  {event.source_type === 'api' ? '🔥 Live' : '👥 Community'}
+                </div>
                 🎵
               </div>
               <div class="event-content">
@@ -745,7 +881,7 @@ const allTags = [...new Set(events.flatMap(e => e.tags || []).filter(Boolean))];
                 <div class="event-meta">
                   <div class="event-venue">
                     <span>📍</span>
-                    {event.venue_name ? `${event.venue_name}, ${event.city}` : 'Venue TBA'}
+                    {event.venue_name ? `${event.venue_name}, ${event.city}` : event.custom_location || 'Venue TBA'}
                   </div>
                   <div class="event-time">
                     <span>🕐</span>
@@ -972,6 +1108,135 @@ const allTags = [...new Set(events.flatMap(e => e.tags || []).filter(Boolean))];
 
       // Initialize
       filterEvents();
+
+      // Sync functionality
+      const syncEventsBtn = document.getElementById('syncEventsBtn');
+      const refreshEventsBtn = document.getElementById('refreshEventsBtn');
+      const syncProgress = document.getElementById('syncProgress');
+      const progressFill = document.getElementById('progressFill');
+      const progressText = document.getElementById('progressText');
+      const syncIcon = document.getElementById('syncIcon');
+      const syncText = document.getElementById('syncText');
+
+      let isSyncing = false;
+
+      syncEventsBtn.addEventListener('click', async () => {
+        if (isSyncing) return;
+        
+        await syncEvents();
+      });
+
+      refreshEventsBtn.addEventListener('click', () => {
+        window.location.reload();
+      });
+
+      async function syncEvents() {
+        isSyncing = true;
+        syncEventsBtn.disabled = true;
+        refreshEventsBtn.disabled = true;
+        
+        // Show progress
+        syncProgress.style.display = 'block';
+        syncIcon.textContent = '⏳';
+        syncText.textContent = 'Syncing...';
+        
+        // Animate progress
+        animateProgress();
+        
+        try {
+          const response = await fetch('/api/sync-events', {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${process.env.SYNC_API_KEY || 'your-secret-sync-key'}`
+            }
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Sync failed: ${response.status}`);
+          }
+          
+          const result = await response.json();
+          
+          // Complete progress
+          progressFill.style.width = '100%';
+          progressText.textContent = 'Sync completed successfully!';
+          syncIcon.textContent = '✅';
+          syncText.textContent = 'Sync Complete';
+          
+          // Show success message
+          setTimeout(() => {
+            alert('🎉 Events synced successfully! Refreshing page...');
+            window.location.reload();
+          }, 1500);
+          
+        } catch (error) {
+          console.error('Sync error:', error);
+          progressText.textContent = 'Sync failed. Please try again.';
+          syncIcon.textContent = '❌';
+          syncText.textContent = 'Sync Failed';
+          
+          setTimeout(() => {
+            resetSyncUI();
+          }, 3000);
+        }
+      }
+
+      function animateProgress() {
+        let progress = 0;
+        const interval = setInterval(() => {
+          progress += Math.random() * 15;
+          if (progress >= 90) {
+            progress = 90;
+            clearInterval(interval);
+          }
+          progressFill.style.width = progress + '%';
+          
+          // Update progress text
+          if (progress < 30) {
+            progressText.textContent = 'Connecting to event sources...';
+          } else if (progress < 60) {
+            progressText.textContent = 'Fetching latest events...';
+          } else if (progress < 90) {
+            progressText.textContent = 'Processing and saving events...';
+          }
+        }, 500);
+      }
+
+      function resetSyncUI() {
+        isSyncing = false;
+        syncEventsBtn.disabled = false;
+        refreshEventsBtn.disabled = false;
+        syncProgress.style.display = 'none';
+        progressFill.style.width = '0%';
+        syncIcon.textContent = '🚀';
+        syncText.textContent = 'Sync Latest Events';
+      }
+
+      // Auto-refresh indicator for live events
+      function addLiveEventIndicators() {
+        const liveEvents = document.querySelectorAll('[data-source="api"]');
+        liveEvents.forEach(event => {
+          const badge = event.querySelector('.event-source-badge');
+          if (badge) {
+            // Add pulse animation for live events
+            badge.style.animation = 'pulse 2s infinite';
+          }
+        });
+      }
+
+      // Add pulse animation
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.7; }
+          100% { opacity: 1; }
+        }
+      `;
+      document.head.appendChild(style);
+
+      // Initialize live event indicators
+      addLiveEventIndicators();
     </script>
   </body>
 </html>
