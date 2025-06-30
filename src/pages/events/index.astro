@@ -1,0 +1,977 @@
+---
+import Navigation from '../../components/Navigation.astro';
+import { Pool } from 'pg';
+
+// Database connection
+const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
+  'postgresql://ishanpathak@localhost:5432/artist_events';
+
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+// Get all published events from database
+async function getPublishedEvents() {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT 
+        e.id, e.slug, e.title, e.description, e.start_date, e.start_time,
+        e.image_url, e.ticket_price, e.event_type, e.status,
+        v.name as venue_name, v.address, v.city, v.state,
+        array_agg(DISTINCT a.name) as artists,
+        array_agg(DISTINCT t.name) as tags
+      FROM events e
+      LEFT JOIN venues v ON e.venue_id = v.id
+      LEFT JOIN event_artists ea ON e.id = ea.event_id
+      LEFT JOIN artists a ON ea.artist_id = a.id
+      LEFT JOIN event_tags et ON e.id = et.event_id
+      LEFT JOIN tags t ON et.tag_id = t.id
+      WHERE e.status = 'published'
+      GROUP BY e.id, v.name, v.address, v.city, v.state
+      ORDER BY e.start_date ASC
+    `);
+    
+    return result.rows;
+  } finally {
+    client.release();
+  }
+}
+
+const events = await getPublishedEvents();
+
+// Get unique values for filters
+const eventTypes = [...new Set(events.map(e => e.event_type).filter(Boolean))];
+const cities = [...new Set(events.map(e => e.city).filter(Boolean))];
+const allTags = [...new Set(events.flatMap(e => e.tags || []).filter(Boolean))];
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Discover Amazing Events - Artist Events</title>
+    <meta name="description" content="Find the best music events, concerts, and performances from talented artists. Filter by genre, location, date, and more." />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        line-height: 1.6;
+        color: #1e293b;
+        background: #f8fafc;
+      }
+
+      /* Page Header */
+      .page-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 4rem 0 2rem;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .page-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="1" fill="rgba(255,255,255,0.1)"/></svg>');
+        background-size: 50px 50px;
+        opacity: 0.1;
+      }
+
+      .header-container {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 0 20px;
+        position: relative;
+        z-index: 1;
+      }
+
+      .page-title {
+        font-size: 3rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+        line-height: 1.1;
+      }
+
+      .page-subtitle {
+        font-size: 1.2rem;
+        opacity: 0.9;
+        margin-bottom: 2rem;
+        max-width: 600px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      .header-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 2rem;
+        max-width: 500px;
+        margin: 0 auto;
+      }
+
+      .stat-item {
+        text-align: center;
+      }
+
+      .stat-number {
+        font-size: 2rem;
+        font-weight: 700;
+        display: block;
+        margin-bottom: 0.25rem;
+      }
+
+      .stat-label {
+        opacity: 0.8;
+        font-size: 0.9rem;
+      }
+
+      /* Main Content */
+      .main-content {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 3rem 20px;
+      }
+
+      /* Advanced Filter Bar */
+      .filter-section {
+        background: white;
+        border-radius: 20px;
+        padding: 2rem;
+        margin-bottom: 3rem;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+      }
+
+      .filter-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+
+      .filter-title {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #1e293b;
+      }
+
+      .filter-toggle {
+        background: #667eea;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 0.9rem;
+        display: none;
+      }
+
+      .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 1.5rem;
+      }
+
+      .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .filter-label {
+        font-weight: 600;
+        color: #374151;
+        font-size: 0.9rem;
+      }
+
+      .filter-control {
+        padding: 10px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        background: white;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+      }
+
+      .filter-control:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      .search-bar {
+        grid-column: 1 / -1;
+      }
+
+      .search-input {
+        width: 100%;
+        padding: 14px 20px;
+        border: 2px solid #e5e7eb;
+        border-radius: 12px;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+        background: #fafafa;
+      }
+
+      .search-input:focus {
+        outline: none;
+        border-color: #667eea;
+        background: white;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      .filter-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: flex-end;
+        padding-top: 1rem;
+        border-top: 1px solid #f1f5f9;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 10px 20px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+
+      .btn-secondary {
+        background: #f1f5f9;
+        color: #64748b;
+      }
+
+      .btn-secondary:hover {
+        background: #e2e8f0;
+      }
+
+      .btn-primary {
+        background: #667eea;
+        color: white;
+      }
+
+      .btn-primary:hover {
+        background: #5a67d8;
+        transform: translateY(-1px);
+      }
+
+      /* Results Section */
+      .results-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+
+      .results-count {
+        color: #64748b;
+        font-size: 1rem;
+      }
+
+      .sort-controls {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+
+      .sort-label {
+        font-weight: 600;
+        color: #374151;
+        font-size: 0.9rem;
+      }
+
+      .sort-select {
+        padding: 8px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        background: white;
+        cursor: pointer;
+        min-width: 150px;
+      }
+
+      /* Events Grid */
+      .events-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 2rem;
+        margin-bottom: 3rem;
+      }
+
+      .event-card {
+        background: white;
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+        border: 1px solid rgba(226, 232, 240, 0.8);
+        text-decoration: none;
+        color: inherit;
+        position: relative;
+      }
+
+      .event-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
+      }
+
+      .event-image {
+        height: 200px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 3rem;
+        color: white;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .event-date-badge {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: rgba(255, 255, 255, 0.95);
+        color: #1e293b;
+        padding: 0.5rem 1rem;
+        border-radius: 12px;
+        font-weight: 700;
+        font-size: 0.8rem;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      }
+
+      .event-type-badge {
+        position: absolute;
+        top: 1rem;
+        left: 1rem;
+        background: rgba(102, 126, 234, 0.9);
+        color: white;
+        padding: 0.4rem 0.8rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .event-content {
+        padding: 1.5rem;
+      }
+
+      .event-title {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 0.75rem;
+        line-height: 1.3;
+      }
+
+      .event-description {
+        color: #64748b;
+        margin-bottom: 1rem;
+        line-height: 1.6;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .event-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+      }
+
+      .event-venue {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #64748b;
+        font-size: 0.9rem;
+      }
+
+      .event-time {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #64748b;
+        font-size: 0.9rem;
+      }
+
+      .event-artists {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #667eea;
+        font-size: 0.9rem;
+        font-weight: 600;
+      }
+
+      .event-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 1rem;
+        border-top: 1px solid #f1f5f9;
+      }
+
+      .event-price {
+        font-weight: 700;
+        color: #059669;
+        font-size: 1.1rem;
+      }
+
+      .event-price.free {
+        color: #667eea;
+      }
+
+      .event-tags {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-top: 0.5rem;
+      }
+
+      .event-tag {
+        background: rgba(102, 126, 234, 0.1);
+        color: #667eea;
+        padding: 0.2rem 0.6rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 500;
+      }
+
+      /* No events state */
+      .no-events {
+        text-align: center;
+        padding: 4rem 2rem;
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      }
+
+      .no-events h3 {
+        color: #64748b;
+        margin-bottom: 1rem;
+        font-size: 1.5rem;
+      }
+
+      .no-events p {
+        color: #64748b;
+        margin-bottom: 2rem;
+        max-width: 400px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      /* Pagination */
+      .pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 3rem;
+      }
+
+      .pagination-btn {
+        padding: 10px 16px;
+        border: 1px solid #d1d5db;
+        background: white;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-decoration: none;
+        color: #374151;
+      }
+
+      .pagination-btn:hover:not(.disabled) {
+        background: #667eea;
+        color: white;
+        border-color: #667eea;
+      }
+
+      .pagination-btn.active {
+        background: #667eea;
+        color: white;
+        border-color: #667eea;
+      }
+
+      .pagination-btn.disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      /* Responsive Design */
+      @media (max-width: 1024px) {
+        .filter-grid {
+          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        }
+      }
+
+      @media (max-width: 768px) {
+        .page-title {
+          font-size: 2.5rem;
+        }
+
+        .filter-toggle {
+          display: block;
+        }
+
+        .filter-grid {
+          display: none;
+        }
+
+        .filter-grid.active {
+          display: grid;
+          grid-template-columns: 1fr;
+        }
+
+        .filter-actions {
+          justify-content: center;
+        }
+
+        .events-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .results-header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .sort-controls {
+          justify-content: space-between;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .main-content {
+          padding: 2rem 16px;
+        }
+
+        .filter-section {
+          padding: 1.5rem;
+        }
+
+        .event-content {
+          padding: 1rem;
+        }
+
+        .header-stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <Navigation currentPage="events" />
+
+    <!-- Page Header -->
+    <section class="page-header">
+      <div class="header-container">
+        <h1 class="page-title">Discover Amazing Events</h1>
+        <p class="page-subtitle">
+          Find the best music events, concerts, and performances from talented artists worldwide. 
+          Filter by genre, location, date, and more to discover your next favorite show.
+        </p>
+        
+        <div class="header-stats">
+          <div class="stat-item">
+            <span class="stat-number">{events.length}</span>
+            <span class="stat-label">Live Events</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">{cities.length}</span>
+            <span class="stat-label">Cities</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">{eventTypes.length}</span>
+            <span class="stat-label">Event Types</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">{allTags.length}</span>
+            <span class="stat-label">Genres</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Advanced Filter Section -->
+      <section class="filter-section">
+        <div class="filter-header">
+          <h2 class="filter-title">Find Your Perfect Event</h2>
+          <button class="filter-toggle" id="filterToggle">
+            <span>🔍</span>
+            Show Filters
+          </button>
+        </div>
+
+        <div class="filter-grid" id="filterGrid">
+          <div class="filter-group">
+            <label class="filter-label">Event Type</label>
+            <select class="filter-control" id="eventTypeFilter">
+              <option value="">All Types</option>
+              {eventTypes.map(type => (
+                <option value={type}>{type}</option>
+              ))}
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">City</label>
+            <select class="filter-control" id="cityFilter">
+              <option value="">All Cities</option>
+              {cities.map(city => (
+                <option value={city}>{city}</option>
+              ))}
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">Price Range</label>
+            <select class="filter-control" id="priceFilter">
+              <option value="">Any Price</option>
+              <option value="free">Free Events</option>
+              <option value="under25">Under $25</option>
+              <option value="25-50">$25 - $50</option>
+              <option value="over50">Over $50</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">Date Range</label>
+            <select class="filter-control" id="dateFilter">
+              <option value="">Any Date</option>
+              <option value="today">Today</option>
+              <option value="tomorrow">Tomorrow</option>
+              <option value="this-week">This Week</option>
+              <option value="this-month">This Month</option>
+              <option value="next-month">Next Month</option>
+            </select>
+          </div>
+
+          <div class="search-bar">
+            <input 
+              type="text" 
+              class="search-input" 
+              placeholder="Search events, artists, venues, or genres..." 
+              id="searchInput"
+            />
+          </div>
+        </div>
+
+        <div class="filter-actions">
+          <button class="btn btn-secondary" id="clearFilters">
+            <span>🗑️</span>
+            Clear All
+          </button>
+          <button class="btn btn-primary" id="applyFilters">
+            <span>🔍</span>
+            Apply Filters
+          </button>
+        </div>
+      </section>
+
+      <!-- Results Header -->
+      <section class="results-header">
+        <div class="results-count" id="resultsCount">
+          Showing {events.length} events
+        </div>
+        <div class="sort-controls">
+          <label class="sort-label">Sort by:</label>
+          <select class="sort-select" id="sortSelect">
+            <option value="date-asc">Date (Earliest First)</option>
+            <option value="date-desc">Date (Latest First)</option>
+            <option value="price-asc">Price (Low to High)</option>
+            <option value="price-desc">Price (High to Low)</option>
+            <option value="title-asc">Title (A-Z)</option>
+            <option value="title-desc">Title (Z-A)</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- Events Grid -->
+      {events.length > 0 ? (
+        <section class="events-grid" id="eventsGrid">
+          {events.map(event => (
+            <a href={`/events/${event.slug}`} class="event-card" data-event-type={event.event_type} data-city={event.city} data-price={event.ticket_price || 0}>
+              <div class="event-image">
+                <div class="event-date-badge">
+                  {new Date(event.start_date).toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric',
+                    year: new Date(event.start_date).getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+                  })}
+                </div>
+                {event.event_type && (
+                  <div class="event-type-badge">{event.event_type}</div>
+                )}
+                🎵
+              </div>
+              <div class="event-content">
+                <h3 class="event-title">{event.title}</h3>
+                <p class="event-description">{event.description}</p>
+                
+                <div class="event-meta">
+                  <div class="event-venue">
+                    <span>📍</span>
+                    {event.venue_name ? `${event.venue_name}, ${event.city}` : 'Venue TBA'}
+                  </div>
+                  <div class="event-time">
+                    <span>🕐</span>
+                    {event.start_time || 'Time TBA'}
+                  </div>
+                  {event.artists && event.artists.filter(Boolean).length > 0 && (
+                    <div class="event-artists">
+                      <span>🎤</span>
+                      {event.artists.filter(Boolean).join(', ')}
+                    </div>
+                  )}
+                </div>
+
+                <div class="event-footer">
+                  <div class={`event-price ${!event.ticket_price ? 'free' : ''}`}>
+                    {event.ticket_price ? `$${event.ticket_price}` : 'Free'}
+                  </div>
+                </div>
+
+                {event.tags && event.tags.filter(Boolean).length > 0 && (
+                  <div class="event-tags">
+                    {event.tags.filter(Boolean).slice(0, 3).map(tag => (
+                      <span class="event-tag">{tag}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </a>
+          ))}
+        </section>
+      ) : (
+        <section class="no-events">
+          <h3>🎭 No events found!</h3>
+          <p>Be the first to create an amazing event for the community, or try adjusting your search filters.</p>
+          <a href="/submit" class="btn btn-primary">Create First Event</a>
+        </section>
+      )}
+
+      <!-- Pagination (if needed) -->
+      {events.length > 12 && (
+        <div class="pagination">
+          <button class="pagination-btn disabled">← Previous</button>
+          <button class="pagination-btn active">1</button>
+          <button class="pagination-btn">2</button>
+          <button class="pagination-btn">3</button>
+          <button class="pagination-btn">Next →</button>
+        </div>
+      )}
+    </main>
+
+    <script>
+      // Filter and search functionality
+      const filterToggle = document.getElementById('filterToggle');
+      const filterGrid = document.getElementById('filterGrid');
+      const searchInput = document.getElementById('searchInput');
+      const eventTypeFilter = document.getElementById('eventTypeFilter');
+      const cityFilter = document.getElementById('cityFilter');
+      const priceFilter = document.getElementById('priceFilter');
+      const dateFilter = document.getElementById('dateFilter');
+      const sortSelect = document.getElementById('sortSelect');
+      const eventsGrid = document.getElementById('eventsGrid');
+      const resultsCount = document.getElementById('resultsCount');
+      const clearFilters = document.getElementById('clearFilters');
+      const applyFilters = document.getElementById('applyFilters');
+
+      let allEvents = Array.from(eventsGrid.querySelectorAll('.event-card'));
+      let filteredEvents = [...allEvents];
+
+      // Toggle filter visibility on mobile
+      filterToggle.addEventListener('click', () => {
+        filterGrid.classList.toggle('active');
+        const isVisible = filterGrid.classList.contains('active');
+        filterToggle.textContent = isVisible ? '🗑️ Hide Filters' : '🔍 Show Filters';
+      });
+
+      function getEventPrice(eventCard) {
+        const priceText = eventCard.querySelector('.event-price').textContent;
+        if (priceText === 'Free') return 0;
+        return parseFloat(priceText.replace('$', ''));
+      }
+
+      function getEventDate(eventCard) {
+        const dateText = eventCard.querySelector('.event-date-badge').textContent;
+        return new Date(dateText + ' ' + new Date().getFullYear());
+      }
+
+      function filterEvents() {
+        const searchTerm = searchInput.value.toLowerCase();
+        const selectedType = eventTypeFilter.value;
+        const selectedCity = cityFilter.value;
+        const selectedPrice = priceFilter.value;
+        const selectedDate = dateFilter.value;
+
+        filteredEvents = allEvents.filter(event => {
+          // Search filter
+          const title = event.querySelector('.event-title').textContent.toLowerCase();
+          const description = event.querySelector('.event-description').textContent.toLowerCase();
+          const artists = event.querySelector('.event-artists')?.textContent.toLowerCase() || '';
+          const venue = event.querySelector('.event-venue').textContent.toLowerCase();
+          
+          const matchesSearch = !searchTerm || 
+            title.includes(searchTerm) || 
+            description.includes(searchTerm) ||
+            artists.includes(searchTerm) ||
+            venue.includes(searchTerm);
+
+          // Type filter
+          const eventType = event.dataset.eventType;
+          const matchesType = !selectedType || eventType === selectedType;
+
+          // City filter
+          const city = event.dataset.city;
+          const matchesCity = !selectedCity || city === selectedCity;
+
+          // Price filter
+          const price = getEventPrice(event);
+          let matchesPrice = true;
+          if (selectedPrice === 'free') matchesPrice = price === 0;
+          else if (selectedPrice === 'under25') matchesPrice = price > 0 && price < 25;
+          else if (selectedPrice === '25-50') matchesPrice = price >= 25 && price <= 50;
+          else if (selectedPrice === 'over50') matchesPrice = price > 50;
+
+          // Date filter (simplified)
+          const today = new Date();
+          const eventDate = getEventDate(event);
+          let matchesDate = true;
+          
+          if (selectedDate === 'today') {
+            matchesDate = eventDate.toDateString() === today.toDateString();
+          } else if (selectedDate === 'tomorrow') {
+            const tomorrow = new Date(today);
+            tomorrow.setDate(today.getDate() + 1);
+            matchesDate = eventDate.toDateString() === tomorrow.toDateString();
+          } else if (selectedDate === 'this-week') {
+            const weekFromNow = new Date(today);
+            weekFromNow.setDate(today.getDate() + 7);
+            matchesDate = eventDate >= today && eventDate <= weekFromNow;
+          } else if (selectedDate === 'this-month') {
+            matchesDate = eventDate.getMonth() === today.getMonth() && 
+                         eventDate.getFullYear() === today.getFullYear();
+          }
+
+          return matchesSearch && matchesType && matchesCity && matchesPrice && matchesDate;
+        });
+
+        sortEvents();
+        displayEvents();
+        updateResultsCount();
+      }
+
+      function sortEvents() {
+        const sortBy = sortSelect.value;
+        
+        filteredEvents.sort((a, b) => {
+          switch (sortBy) {
+            case 'date-asc':
+              return getEventDate(a) - getEventDate(b);
+            case 'date-desc':
+              return getEventDate(b) - getEventDate(a);
+            case 'price-asc':
+              return getEventPrice(a) - getEventPrice(b);
+            case 'price-desc':
+              return getEventPrice(b) - getEventPrice(a);
+            case 'title-asc':
+              return a.querySelector('.event-title').textContent.localeCompare(
+                b.querySelector('.event-title').textContent
+              );
+            case 'title-desc':
+              return b.querySelector('.event-title').textContent.localeCompare(
+                a.querySelector('.event-title').textContent
+              );
+            default:
+              return 0;
+          }
+        });
+      }
+
+      function displayEvents() {
+        eventsGrid.innerHTML = '';
+        
+        if (filteredEvents.length === 0) {
+          eventsGrid.innerHTML = `
+            <div style="grid-column: 1 / -1;" class="no-events">
+              <h3>🔍 No events found</h3>
+              <p>Try adjusting your search criteria or filters to find more events.</p>
+              <button class="btn btn-primary" onclick="clearAllFilters()">Clear Filters</button>
+            </div>
+          `;
+        } else {
+          filteredEvents.forEach(event => eventsGrid.appendChild(event));
+        }
+      }
+
+      function updateResultsCount() {
+        resultsCount.textContent = `Showing ${filteredEvents.length} events`;
+      }
+
+      function clearAllFilters() {
+        searchInput.value = '';
+        eventTypeFilter.value = '';
+        cityFilter.value = '';
+        priceFilter.value = '';
+        dateFilter.value = '';
+        sortSelect.value = 'date-asc';
+        filterEvents();
+      }
+
+      // Event listeners
+      searchInput.addEventListener('input', filterEvents);
+      eventTypeFilter.addEventListener('change', filterEvents);
+      cityFilter.addEventListener('change', filterEvents);
+      priceFilter.addEventListener('change', filterEvents);
+      dateFilter.addEventListener('change', filterEvents);
+      sortSelect.addEventListener('change', filterEvents);
+      clearFilters.addEventListener('click', clearAllFilters);
+      applyFilters.addEventListener('click', filterEvents);
+
+      // Real-time search on mobile
+      let searchTimeout;
+      searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(filterEvents, 300);
+      });
+
+      // Initialize
+      filterEvents();
+    </script>
+  </body>
+</html>
