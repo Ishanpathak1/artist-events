@@ -1144,11 +1144,8 @@ const aggregatedCount = events.filter(e => e.source_type === 'api').length;
         animateProgress();
         
         try {
-          const response = await fetch('/api/sync-events', {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${process.env.SYNC_API_KEY || 'your-secret-sync-key'}`
-            }
+          const response = await fetch('/api/sync-events?source=all', {
+            method: 'GET'
           });
           
           if (!response.ok) {
