@@ -559,8 +559,6 @@ const { currentPage } = Astro.props;
       const userType = document.getElementById('userType');
       const userInfo = document.getElementById('userInfo');
       const userDivider = document.getElementById('userDivider');
-      const profileLink = document.getElementById('profileLink');
-      const mobileProfileLink = document.getElementById('mobileProfileLink');
       const dashboardLink = document.getElementById('dashboardLink');
       const logoutBtn = document.getElementById('logoutBtn');
       const mobileLogoutBtn = document.getElementById('mobileLogoutBtn');
@@ -583,8 +581,6 @@ const { currentPage } = Astro.props;
         
         if (userInfo) userInfo.style.display = 'flex';
         if (userDivider) userDivider.style.display = 'block';
-        if (profileLink) profileLink.style.display = 'flex';
-        if (mobileProfileLink) mobileProfileLink.style.display = 'flex';
         if (logoutBtn) logoutBtn.style.display = 'flex';
         if (mobileLogoutBtn) mobileLogoutBtn.style.display = 'flex';
         
@@ -602,8 +598,6 @@ const { currentPage } = Astro.props;
         
         if (userInfo) userInfo.style.display = 'none';
         if (userDivider) userDivider.style.display = 'none';
-        if (profileLink) profileLink.style.display = 'none';
-        if (mobileProfileLink) mobileProfileLink.style.display = 'none';
         if (dashboardLink) dashboardLink.style.display = 'none';
         if (logoutBtn) logoutBtn.style.display = 'none';
         if (mobileLogoutBtn) mobileLogoutBtn.style.display = 'none';

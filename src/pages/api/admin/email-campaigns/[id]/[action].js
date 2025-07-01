@@ -50,7 +50,7 @@ export async function POST({ params, request }) {
     
     // Authenticate admin
     const authResult = await authenticateUser(request);
-    if (!authResult.user || (authResult.user.user_type !== 'admin' && authResult.user.role !== 'admin')) {
+    if (!authResult.user || authResult.user.user_type !== 'admin') {
       return new Response(JSON.stringify({ error: 'Admin access required' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
@@ -113,7 +113,7 @@ export async function GET({ params, request }) {
     
     // Authenticate admin
     const authResult = await authenticateUser(request);
-    if (!authResult.user || (authResult.user.user_type !== 'admin' && authResult.user.role !== 'admin')) {
+    if (!authResult.user || authResult.user.user_type !== 'admin') {
       return new Response(JSON.stringify({ error: 'Admin access required' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }

@@ -10,7 +10,7 @@ export async function POST({ request }) {
   try {
     // Authenticate admin
     const authResult = await authenticateUser(request);
-    if (!authResult.user || authResult.user.role !== 'admin') {
+    if (!authResult.user || authResult.user.user_type !== 'admin') {
       return new Response(JSON.stringify({ error: 'Admin access required' }), {
         status: 403,
         headers: { 'Content-Type': 'application/json' }
@@ -138,7 +138,7 @@ export async function GET({ request }) {
   try {
     // Authenticate admin
     const authResult = await authenticateUser(request);
-    if (!authResult.user || authResult.user.role !== 'admin') {
+    if (!authResult.user || authResult.user.user_type !== 'admin') {
       return new Response(JSON.stringify({ error: 'Admin access required' }), {
         status: 403,
         headers: { 'Content-Type': 'application/json' }
