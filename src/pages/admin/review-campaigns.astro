@@ -1,0 +1,1089 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { Pool } from 'pg';
+
+// Helper function to parse cookies (same as other admin pages)
+function parseCookie(cookieString, name) {
+  const cookies = cookieString.split(';').map(cookie => cookie.trim());
+  for (const cookie of cookies) {
+    const [cookieName, cookieValue] = cookie.split('=');
+    if (cookieName === name) {
+      return decodeURIComponent(cookieValue);
+    }
+  }
+  return null;
+}
+
+// Database connection string (same as other admin pages)
+const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
+  'postgresql://ishanpathak@localhost:5432/artist_events';
+
+// Admin check - verify user is logged in and is admin (same pattern as other admin pages)
+const cookies = Astro.request.headers.get('cookie');
+let currentUser = null;
+let isAdmin = false;
+
+if (cookies) {
+  const sessionToken = parseCookie(cookies, 'session_token');
+  if (sessionToken) {
+    // Verify session and check admin status
+    const pool = new Pool({
+      connectionString,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    });
+
+    try {
+      const client = await pool.connect();
+      const sessionResult = await client.query(
+        'SELECT u.* FROM users u JOIN user_sessions s ON u.id = s.user_id WHERE s.session_token = $1 AND s.expires_at > NOW()',
+        [sessionToken]
+      );
+      
+      if (sessionResult.rows.length > 0) {
+        currentUser = sessionResult.rows[0];
+        // Check if user is admin (same check as other admin pages)
+        isAdmin = currentUser.email === 'ishan.pathak2711@gmail.com' || 
+                 currentUser.user_type === 'admin' || 
+                 currentUser.is_super_admin === true;
+      }
+      client.release();
+    } catch (error) {
+      console.error('Admin auth error:', error);
+    }
+  }
+}
+
+// Redirect if not admin
+if (!isAdmin) {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: '/?error=unauthorized' }
+  });
+}
+
+// Database connection for queries
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+// Get pending campaigns for review
+async function getPendingCampaigns() {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT 
+        aec.id,
+        aec.subject,
+        aec.content,
+        aec.campaign_type,
+        aec.audience_type,
+        aec.estimated_recipients,
+        aec.status,
+        aec.created_at,
+        aec.submitted_at,
+        u.name as artist_name,
+        u.email as artist_email,
+        CASE 
+          WHEN aec.audience_type = 'my_fans' THEN 
+            (SELECT COUNT(*) FROM artist_subscriptions WHERE artist_id = aec.artist_id AND is_subscribed = true)
+          WHEN aec.audience_type = 'everyone' THEN 
+            (SELECT COUNT(*) FROM users)
+          ELSE 0
+        END as actual_recipient_count
+      FROM artist_email_campaigns aec
+      JOIN users u ON aec.artist_id = u.id
+      WHERE aec.status = 'pending'
+      ORDER BY aec.submitted_at ASC
+    `);
+    return result.rows;
+  } finally {
+    client.release();
+  }
+}
+
+// Get recent campaign decisions
+async function getRecentDecisions() {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT 
+        aec.id,
+        aec.subject,
+        aec.status,
+        aec.reviewed_at,
+        aec.admin_notes,
+        u.name as artist_name,
+        admin.name as reviewed_by
+      FROM artist_email_campaigns aec
+      JOIN users u ON aec.artist_id = u.id
+      LEFT JOIN users admin ON aec.reviewed_by = admin.id
+      WHERE aec.status IN ('approved', 'rejected')
+      ORDER BY aec.reviewed_at DESC
+      LIMIT 10
+    `);
+    return result.rows;
+  } finally {
+    client.release();
+  }
+}
+
+// Get campaign statistics
+async function getCampaignStats() {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT 
+        COUNT(*) as total_campaigns,
+        COUNT(*) FILTER (WHERE status = 'pending') as pending_campaigns,
+        COUNT(*) FILTER (WHERE status = 'approved') as approved_campaigns,
+        COUNT(*) FILTER (WHERE status = 'rejected') as rejected_campaigns,
+        COUNT(*) FILTER (WHERE status = 'sent') as sent_campaigns,
+        COALESCE(AVG(EXTRACT(EPOCH FROM (reviewed_at - submitted_at)) / 3600) FILTER (WHERE reviewed_at IS NOT NULL), 0) as avg_review_time_hours
+      FROM artist_email_campaigns
+      WHERE submitted_at IS NOT NULL
+    `);
+    return result.rows[0];
+  } finally {
+    client.release();
+  }
+}
+
+// Initialize with empty data if tables don't exist yet
+let pendingCampaigns = [];
+let recentDecisions = [];
+let stats = {
+  total_campaigns: 0,
+  pending_campaigns: 0,
+  approved_campaigns: 0,
+  rejected_campaigns: 0,
+  sent_campaigns: 0,
+  avg_review_time_hours: 0
+};
+
+// Check if artist email campaign tables exist and load data
+try {
+  const client = await pool.connect();
+  
+  // Check if the artist_email_campaigns table exists
+  const tableCheckResult = await client.query(`
+    SELECT EXISTS (
+      SELECT FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_name = 'artist_email_campaigns'
+    );
+  `);
+  
+  if (tableCheckResult.rows[0].exists) {
+    // Tables exist, load data
+    pendingCampaigns = await getPendingCampaigns();
+    recentDecisions = await getRecentDecisions();
+    stats = await getCampaignStats();
+  } else {
+    console.log('📋 Artist email campaign tables not found. This is expected on first setup.');
+    console.log('💡 To enable artist email campaigns, run: node scripts/deploy-artist-schema.js');
+  }
+  
+  client.release();
+} catch (error) {
+  console.log('⚠️ Error checking database tables:', error.message);
+  // Use default empty values above
+}
+---
+
+<Layout title="Review Artist Campaigns - Admin Dashboard">
+  <div class="admin-dashboard">
+    <!-- Admin Header -->
+    <header class="admin-header">
+      <div class="admin-header-content">
+        <div class="admin-brand">
+          <h1>🔍 Review Artist Campaigns</h1>
+          <p>Approve or reject artist email campaigns before they reach fans</p>
+        </div>
+        <div class="admin-actions">
+          <a href="/admin" class="btn btn-secondary">← Back to Dashboard</a>
+          <button id="logoutBtn" class="btn btn-danger">Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Admin Navigation -->
+    <nav class="admin-nav">
+      <div class="admin-nav-content">
+        <a href="/admin" class="admin-nav-link">📊 Overview</a>
+        <a href="/admin/users" class="admin-nav-link">👥 Users</a>
+        <a href="/admin/events" class="admin-nav-link">🎪 Events</a>
+        <a href="/admin/blogs" class="admin-nav-link">📝 Blogs</a>
+        <a href="/admin/broadcast" class="admin-nav-link">📢 Broadcast</a>
+        <a href="/admin/review-campaigns" class="admin-nav-link active">🔍 Review Campaigns</a>
+        {currentUser?.email === 'ishan.pathak2711@gmail.com' && currentUser?.is_super_admin && (
+          <a href="/admin/admins" class="admin-nav-link">⚙️ Admins</a>
+        )}
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="admin-main">
+      <!-- Stats Section -->
+      <section class="stats-section">
+        <h2>Campaign Review Overview</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon">📧</div>
+            <div class="stat-content">
+              <h3>{stats.total_campaigns}</h3>
+              <p>Total Campaigns</p>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">⏳</div>
+            <div class="stat-content">
+              <h3>{stats.pending_campaigns}</h3>
+              <p>Pending Review</p>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">✅</div>
+            <div class="stat-content">
+              <h3>{stats.approved_campaigns}</h3>
+              <p>Approved</p>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">❌</div>
+            <div class="stat-content">
+              <h3>{stats.rejected_campaigns}</h3>
+              <p>Rejected</p>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">📤</div>
+            <div class="stat-content">
+              <h3>{stats.sent_campaigns}</h3>
+              <p>Sent</p>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">⏱️</div>
+            <div class="stat-content">
+              <h3>{Math.round(stats.avg_review_time_hours * 10) / 10}h</h3>
+              <p>Avg Review Time</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Pending Campaigns -->
+      <section class="campaigns-section">
+        <div class="section-header">
+          <h2>⏳ Pending Campaigns ({pendingCampaigns.length})</h2>
+          <div class="section-actions">
+            <button class="btn btn-secondary btn-sm" onclick="bulkApprove()">
+              ✅ Bulk Approve Safe Campaigns
+            </button>
+          </div>
+        </div>
+
+        <div class="campaigns-container">
+          {pendingCampaigns.length === 0 ? (
+            <div class="empty-state">
+              <div class="empty-icon">✨</div>
+              <h3>All caught up!</h3>
+              <p>No campaigns are waiting for review.</p>
+            </div>
+          ) : (
+          pendingCampaigns.map((campaign) => (
+            <div class="campaign-card pending-card" data-campaign-id={campaign.id}>
+              <div class="campaign-header">
+                <div class="campaign-info">
+                  <h3>{campaign.subject}</h3>
+                  <div class="campaign-meta">
+                    <span class="artist">👤 {campaign.artist_name}</span>
+                    <span class="type">{campaign.campaign_type}</span>
+                    <span class="audience">
+                      {campaign.audience_type === 'my_fans' ? '👥 My Fans' : '🌍 Everyone'}
+                      ({campaign.actual_recipient_count} recipients)
+                    </span>
+                  </div>
+                </div>
+                <div class="campaign-time">
+                  <small>Submitted: {new Date(campaign.submitted_at).toLocaleString()}</small>
+                  <small class="time-ago">
+                    {(() => {
+                      const hoursAgo = Math.floor((Date.now() - new Date(campaign.submitted_at).getTime()) / (1000 * 60 * 60));
+                      return hoursAgo < 1 ? 'Just now' : hoursAgo < 24 ? `${hoursAgo}h ago` : `${Math.floor(hoursAgo / 24)}d ago`;
+                    })()}
+                  </small>
+                </div>
+              </div>
+
+              <div class="campaign-content">
+                <div class="content-preview">
+                  <h4>Content Preview:</h4>
+                  <div class="email-preview">
+                    <div class="preview-subject">Subject: {campaign.subject}</div>
+                    <div class="preview-body">{campaign.content}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="campaign-actions">
+                <div class="action-group">
+                  <button 
+                    class="btn btn-success" 
+                    onclick={`approveCampaign(${campaign.id})`}
+                  >
+                    ✅ Approve
+                  </button>
+                  <button 
+                    class="btn btn-danger" 
+                    onclick={`rejectCampaign(${campaign.id})`}
+                  >
+                    ❌ Reject
+                  </button>
+                </div>
+                <div class="secondary-actions">
+                  <button 
+                    class="btn btn-secondary btn-sm" 
+                    onclick={`viewArtistProfile('${campaign.artist_email}')`}
+                  >
+                    👤 View Artist
+                  </button>
+                  <button 
+                    class="btn btn-secondary btn-sm" 
+                    onclick={`requestChanges(${campaign.id})`}
+                  >
+                    ✏️ Request Changes
+                  </button>
+                </div>
+              </div>
+            </div>
+                      ))
+          )}
+        </div>
+      </section>
+
+      <!-- Recent Decisions -->
+      <section class="decisions-section">
+        <div class="section-header">
+          <h2>📋 Recent Decisions</h2>
+          <a href="/admin/campaigns/history" class="btn btn-secondary btn-sm">View Full History</a>
+        </div>
+
+        <div class="decisions-container">
+          {recentDecisions.map((decision) => (
+            <div class={`decision-card ${decision.status}`}>
+              <div class="decision-header">
+                <h4>{decision.subject}</h4>
+                <div class="decision-meta">
+                  <span class="artist">by {decision.artist_name}</span>
+                  <span class={`status-badge ${decision.status}`}>
+                    {decision.status === 'approved' ? '✅ Approved' : '❌ Rejected'}
+                  </span>
+                </div>
+              </div>
+              <div class="decision-details">
+                <small>
+                  Reviewed by {decision.reviewed_by || 'Unknown'} on {new Date(decision.reviewed_at).toLocaleString()}
+                </small>
+                {decision.admin_notes && (
+                  <div class="admin-notes">
+                    <strong>Notes:</strong> {decision.admin_notes}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Review Modal -->
+  <div id="reviewModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle">Review Campaign</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="review-form">
+          <div class="form-group">
+            <label for="adminNotes">Admin Notes (optional)</label>
+            <textarea 
+              id="adminNotes" 
+              rows="3" 
+              placeholder="Add notes for the artist about this decision..."
+            ></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button id="modalActionBtn" class="btn btn-primary">Confirm</button>
+      </div>
+  </div>
+</Layout>
+
+<style>
+  .admin-dashboard {
+    min-height: 100vh;
+    background: #f8fafc;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  /* Admin Header */
+  .admin-header {
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 1rem 0;
+  }
+
+  .admin-header-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .admin-brand h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 0.25rem;
+  }
+
+  .admin-brand p {
+    color: #64748b;
+    margin: 0;
+  }
+
+  .admin-actions {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  /* Admin Navigation */
+  .admin-nav {
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 0;
+  }
+
+  .admin-nav-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 2rem;
+    display: flex;
+    gap: 2rem;
+  }
+
+  .admin-nav-link {
+    display: flex;
+    align-items: center;
+    padding: 1rem 0;
+    text-decoration: none;
+    color: #64748b;
+    font-weight: 500;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s ease;
+  }
+
+  .admin-nav-link:hover,
+  .admin-nav-link.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+  }
+
+  /* Main Content */
+  .admin-main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  /* Stats Section */
+  .stats-section {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  .stats-section h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 1rem;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .stat-card {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .stat-icon {
+    font-size: 1.5rem;
+    background: #667eea;
+    color: white;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .stat-content h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin: 0;
+  }
+
+  .stat-content p {
+    color: #64748b;
+    margin: 0;
+    font-size: 0.875rem;
+  }
+
+  /* Campaign Sections */
+  .campaigns-section,
+  .decisions-section {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .section-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin: 0;
+  }
+
+  .section-actions {
+    display: flex;
+    gap: 1rem;
+  }
+
+  /* Campaign Cards */
+  .campaigns-container,
+  .decisions-container {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .campaign-card,
+  .decision-card {
+    background: #f8fafc;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    padding: 1rem;
+    transition: all 0.3s ease;
+  }
+
+  .campaign-card:hover,
+  .decision-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .pending-card {
+    border-left: 4px solid #f59e0b;
+  }
+
+  .decision-card.approved {
+    border-left: 4px solid #10b981;
+  }
+
+  .decision-card.rejected {
+    border-left: 4px solid #ef4444;
+  }
+
+  /* Empty State */
+  .empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: #64748b;
+  }
+
+  .empty-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+  }
+
+  .empty-state h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 0.5rem;
+  }
+
+  .empty-state p {
+    color: #64748b;
+  }
+
+  /* Campaign Content */
+  .campaign-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+  }
+
+  .campaign-info h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+  }
+
+  .campaign-meta {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .campaign-meta span {
+    background: #e2e8f0;
+    color: #475569;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+  }
+
+  .campaign-time {
+    text-align: right;
+    font-size: 0.75rem;
+    color: #64748b;
+  }
+
+  /* Email Preview */
+  .email-preview {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 1rem 0;
+  }
+
+  .preview-subject {
+    background: #f1f5f9;
+    padding: 0.75rem;
+    font-weight: 600;
+    color: #374151;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 0.875rem;
+  }
+
+  .preview-body {
+    padding: 1rem;
+    color: #374151;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+
+  /* Actions */
+  .campaign-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 1rem;
+    border-top: 1px solid #e2e8f0;
+  }
+
+  .action-group,
+  .secondary-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  /* Decision Content */
+  .decision-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.5rem;
+  }
+
+  .decision-header h4 {
+    font-size: 1rem;
+    color: #1e293b;
+    margin: 0;
+  }
+
+  .decision-meta {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .decision-meta .artist {
+    color: #64748b;
+    font-size: 0.875rem;
+  }
+
+  .status-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .status-badge.approved {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .status-badge.rejected {
+    background: #fee2e2;
+    color: #dc2626;
+  }
+
+  .decision-details {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    color: #64748b;
+  }
+
+  .admin-notes {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: #f8fafc;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    color: #374151;
+  }
+
+  /* Buttons */
+  .btn {
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.875rem;
+    transition: all 0.3s ease;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .btn-sm {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+  }
+
+  .btn-primary {
+    background: #667eea;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: #5a67d8;
+  }
+
+  .btn-secondary {
+    background: #f1f5f9;
+    color: #475569;
+  }
+
+  .btn-secondary:hover {
+    background: #e2e8f0;
+  }
+
+  .btn-success {
+    background: #10b981;
+    color: white;
+  }
+
+  .btn-success:hover {
+    background: #059669;
+  }
+
+  .btn-danger {
+    background: #ef4444;
+    color: white;
+  }
+
+  .btn-danger:hover {
+    background: #dc2626;
+  }
+
+  /* Modal */
+  .modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+  }
+
+  .modal-content {
+    background-color: white;
+    margin: 5% auto;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 20px 25px rgba(0, 0, 0, 0.25);
+  }
+
+  .modal-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .modal-header h3 {
+    margin: 0;
+    color: #1e293b;
+    font-size: 1.125rem;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 1.25rem;
+    cursor: pointer;
+    color: #64748b;
+  }
+
+  .modal-body {
+    padding: 1.5rem;
+  }
+
+  .modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #374151;
+    font-size: 0.875rem;
+  }
+
+  .form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    resize: vertical;
+  }
+
+  .form-group textarea:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .admin-header-content {
+      flex-direction: column;
+      gap: 1rem;
+      text-align: center;
+    }
+
+    .admin-nav-content {
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .stats-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .section-header {
+      flex-direction: column;
+      gap: 1rem;
+      align-items: stretch;
+    }
+
+    .campaign-header {
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .campaign-actions {
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .action-group,
+    .secondary-actions {
+      justify-content: center;
+    }
+
+    .decision-header {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+  }
+</style>
+
+<script>
+  let currentCampaignId = null;
+  let currentAction = null;
+
+  // Logout functionality (same as other admin pages)
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    if (confirm('Are you sure you want to logout?')) {
+      try {
+        const response = await fetch('/api/auth/logout', { method: 'POST' });
+        if (response.ok) {
+          window.location.href = '/';
+        } else {
+          alert('Logout failed');
+        }
+      } catch (error) {
+        console.error('Logout error:', error);
+        alert('Logout failed');
+      }
+    }
+  });
+
+  // Approve campaign
+  window.approveCampaign = (campaignId) => {
+    currentCampaignId = campaignId;
+    currentAction = 'approve';
+    document.getElementById('modalTitle').textContent = 'Approve Campaign';
+    document.getElementById('modalActionBtn').textContent = 'Approve';
+    document.getElementById('modalActionBtn').className = 'btn btn-success';
+    document.getElementById('adminNotes').placeholder = 'Optional notes for the artist...';
+    document.getElementById('reviewModal').style.display = 'block';
+  };
+
+  // Reject campaign
+  window.rejectCampaign = (campaignId) => {
+    currentCampaignId = campaignId;
+    currentAction = 'reject';
+    document.getElementById('modalTitle').textContent = 'Reject Campaign';
+    document.getElementById('modalActionBtn').textContent = 'Reject';
+    document.getElementById('modalActionBtn').className = 'btn btn-danger';
+    document.getElementById('adminNotes').placeholder = 'Please explain why this campaign was rejected...';
+    document.getElementById('reviewModal').style.display = 'block';
+  };
+
+  // Request changes
+  window.requestChanges = (campaignId) => {
+    currentCampaignId = campaignId;
+    currentAction = 'reject';
+    document.getElementById('modalTitle').textContent = 'Request Changes';
+    document.getElementById('modalActionBtn').textContent = 'Request Changes';
+    document.getElementById('modalActionBtn').className = 'btn btn-primary';
+    document.getElementById('adminNotes').placeholder = 'Explain what changes are needed...';
+    document.getElementById('reviewModal').style.display = 'block';
+  };
+
+  // Close modal
+  window.closeModal = () => {
+    document.getElementById('reviewModal').style.display = 'none';
+    document.getElementById('adminNotes').value = '';
+    currentCampaignId = null;
+    currentAction = null;
+  };
+
+  // View artist profile
+  window.viewArtistProfile = (email) => {
+    window.open(`/admin/users?email=${encodeURIComponent(email)}`, '_blank');
+  };
+
+  // Bulk approve safe campaigns
+  window.bulkApprove = () => {
+    if (!confirm('This will approve all campaigns from artists with good history. Continue?')) return;
+    
+    // Implementation would go here
+    alert('Bulk approval feature coming soon!');
+  };
+
+  // Handle modal action
+  document.getElementById('modalActionBtn').addEventListener('click', async () => {
+    if (!currentCampaignId || !currentAction) return;
+    
+    const adminNotes = document.getElementById('adminNotes').value;
+    
+    try {
+      const response = await fetch('/api/admin/review-campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          campaign_id: currentCampaignId,
+          action: currentAction,
+          admin_notes: adminNotes
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        alert(`Campaign ${currentAction}d successfully!`);
+        location.reload();
+      } else {
+        alert('Error: ' + result.error);
+      }
+    } catch (error) {
+      alert('Failed to process campaign review');
+    }
+    
+    closeModal();
+  });
+
+  // Close modal when clicking outside
+  document.getElementById('reviewModal').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('reviewModal')) {
+      closeModal();
+    }
+  });
+
+  // Close modal with escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeModal();
+    }
+  });
+</script> 

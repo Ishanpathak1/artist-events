@@ -128,8 +128,8 @@ const userCount = await getUserCount();
         <a href="/admin/users" class="admin-nav-link">👥 Users</a>
         <a href="/admin/events" class="admin-nav-link">🎪 Events</a>
         <a href="/admin/blogs" class="admin-nav-link">📝 Blogs</a>
-        <a href="/admin/email-campaigns" class="admin-nav-link">📧 Email Campaigns</a>
         <a href="/admin/broadcast" class="admin-nav-link active">📢 Broadcast</a>
+        <a href="/admin/review-campaigns" class="admin-nav-link">🔍 Review Campaigns</a>
         {currentUser?.email === 'ishan.pathak2711@gmail.com' && currentUser?.is_super_admin && (
           <a href="/admin/admins" class="admin-nav-link">⚙️ Admins</a>
         )}

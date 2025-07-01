@@ -1,5 +1,6 @@
 ---
 import { authenticateUser } from '../../../../lib/auth-middleware.js';
+import Layout from '../../../layouts/Layout.astro';
 import { Pool } from 'pg';
 
 // Check authentication
@@ -9,707 +10,525 @@ if (!authResult.user) {
 }
 
 const user = authResult.user;
-
-// Get template ID from URL params
-const url = new URL(Astro.request.url);
-const templateId = url.searchParams.get('template');
-
-if (!templateId) {
-  return Astro.redirect('/dashboard/email-campaigns');
-}
-
-// Database connection
-const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
-  'postgresql://ishanpathak@localhost:5432/artist_events';
-
 const pool = new Pool({
-  connectionString,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  connectionString: process.env.NEON_DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
 });
 
-// Get template details
-async function getTemplate(id) {
+// Get fan count
+async function getFanCount(userId) {
   const client = await pool.connect();
   try {
     const result = await client.query(`
-      SELECT * FROM email_templates WHERE id = $1 AND is_active = true
-    `, [id]);
-    return result.rows[0];
-  } finally {
-    client.release();
-  }
-}
-
-// Get subscriber count
-async function getSubscriberCount() {
-  const client = await pool.connect();
-  try {
-    const result = await client.query(`
-      SELECT COUNT(*) as count FROM email_subscriptions WHERE is_subscribed = true
-    `);
+      SELECT COUNT(*) as count 
+      FROM artist_subscriptions 
+      WHERE artist_id = $1 AND is_subscribed = true
+    `, [userId]);
     return result.rows[0].count;
   } finally {
     client.release();
   }
 }
 
-const template = await getTemplate(templateId);
-const subscriberCount = await getSubscriberCount();
-
-if (!template) {
-  return Astro.redirect('/dashboard/email-campaigns');
+// Get total user count
+async function getTotalUserCount() {
+  const client = await pool.connect();
+  try {
+    const result = await client.query('SELECT COUNT(*) as count FROM users');
+    return result.rows[0].count;
+  } finally {
+    client.release();
+  }
 }
 
-const variables = JSON.parse(template.variables || '[]');
+let fanCount = 0;
+let totalUsers = 0;
+
+try {
+  fanCount = parseInt(await getFanCount(user.id)) || 0;
+  totalUsers = parseInt(await getTotalUserCount()) || 0;
+} catch (error) {
+  fanCount = 0;
+  totalUsers = 0;
+}
+
+const templates = [
+  {
+    id: 'new_release',
+    name: '🎵 New Release Announcement',
+    subject: 'New Music Alert: [Song/Album Name] is Here!',
+    content: 'Hey there!\n\nI\'m thrilled to share my latest creation with you! 🎶\n\n[Song/Album Name] is now available on all streaming platforms.\n\nRock on,\n[Your Name]'
+  },
+  {
+    id: 'upcoming_show',
+    name: '🎪 Upcoming Show',
+    subject: 'See You Live: [Venue] on [Date]!',
+    content: 'Hey music lovers!\n\nI can\'t wait to perform for you live! 🎤\n\n📅 Date: [Date]\n📍 Venue: [Venue Name]\n🎫 Tickets: [Ticket Link]\n\nCan\'t wait to see you there!\n\n[Your Name]'
+  }
+];
 ---
 
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Create Campaign - {template.name}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
+<Layout title="Create Email Campaign">
+  <div class="container">
+    <header class="header">
+      <h1>✍️ Create Email Campaign</h1>
+      <a href="/dashboard/email-campaigns" class="btn-back">← Back</a>
+    </header>
 
-      body {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        line-height: 1.6;
-        color: #1e293b;
-        background: #f8fafc;
-      }
+    <div class="content">
+      <section class="templates">
+        <h2>🎨 Templates</h2>
+        {templates.map(template => (
+          <div class="template-card" data-template-id={template.id}>
+            <h3>{template.name}</h3>
+            <p>{template.subject}</p>
+          </div>
+        ))}
+      </section>
 
-      .container {
-        max-width: 1000px;
-        margin: 0 auto;
-        padding: 2rem;
-      }
-
-      .header {
-        text-align: center;
-        margin-bottom: 3rem;
-        padding: 2rem;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 20px;
-        color: white;
-      }
-
-      .header h1 {
-        font-size: 2rem;
-        margin-bottom: 0.5rem;
-      }
-
-      .header p {
-        opacity: 0.9;
-        font-size: 1rem;
-      }
-
-      .form-container {
-        background: white;
-        border-radius: 20px;
-        padding: 2rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-      }
-
-      .template-info {
-        background: #f1f5f9;
-        padding: 1.5rem;
-        border-radius: 15px;
-        margin-bottom: 2rem;
-        text-align: center;
-      }
-
-      .template-name {
-        font-size: 1.3rem;
-        font-weight: 700;
-        margin-bottom: 0.5rem;
-        color: #1e293b;
-      }
-
-      .template-description {
-        color: #64748b;
-        margin-bottom: 1rem;
-      }
-
-      .template-category {
-        background: #667eea;
-        color: white;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        display: inline-block;
-      }
-
-      .form-section {
-        margin-bottom: 2rem;
-        padding-bottom: 2rem;
-        border-bottom: 1px solid #e2e8f0;
-      }
-
-      .form-section:last-child {
-        border-bottom: none;
-        margin-bottom: 0;
-        padding-bottom: 0;
-      }
-
-      .section-title {
-        font-size: 1.3rem;
-        font-weight: 700;
-        margin-bottom: 1rem;
-        color: #1e293b;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-      }
-
-      .form-group {
-        margin-bottom: 1.5rem;
-      }
-
-      .form-label {
-        display: block;
-        margin-bottom: 0.5rem;
-        font-weight: 600;
-        color: #1e293b;
-      }
-
-      .form-input,
-      .form-textarea,
-      .form-select {
-        width: 100%;
-        padding: 12px;
-        border: 2px solid #e2e8f0;
-        border-radius: 10px;
-        font-size: 1rem;
-        transition: border-color 0.3s ease;
-      }
-
-      .form-input:focus,
-      .form-textarea:focus,
-      .form-select:focus {
-        outline: none;
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-      }
-
-      .form-textarea {
-        min-height: 120px;
-        resize: vertical;
-      }
-
-      .form-help {
-        font-size: 0.85rem;
-        color: #64748b;
-        margin-top: 0.5rem;
-      }
-
-      .variable-hints {
-        background: #f1f5f9;
-        padding: 1rem;
-        border-radius: 10px;
-        margin-bottom: 1rem;
-      }
-
-      .variable-hints h4 {
-        margin-bottom: 0.5rem;
-        color: #1e293b;
-        font-size: 0.9rem;
-      }
-
-      .variable-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-      }
-
-      .variable-tag {
-        background: #667eea;
-        color: white;
-        padding: 4px 8px;
-        border-radius: 12px;
-        font-size: 0.8rem;
-        cursor: pointer;
-        transition: background-color 0.3s ease;
-      }
-
-      .variable-tag:hover {
-        background: #5a67d8;
-      }
-
-      .form-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 1.5rem;
-      }
-
-      .audience-card {
-        border: 2px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 1rem;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        text-align: center;
-      }
-
-      .audience-card:hover {
-        border-color: #667eea;
-      }
-
-      .audience-card.selected {
-        border-color: #667eea;
-        background: rgba(102, 126, 234, 0.05);
-      }
-
-      .audience-title {
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-        color: #1e293b;
-      }
-
-      .audience-count {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #667eea;
-        display: block;
-        margin-bottom: 0.25rem;
-      }
-
-      .audience-description {
-        font-size: 0.85rem;
-        color: #64748b;
-      }
-
-      .preview-section {
-        background: #f8fafc;
-        border: 2px dashed #cbd5e1;
-        border-radius: 15px;
-        padding: 2rem;
-        text-align: center;
-      }
-
-      .preview-section h3 {
-        margin-bottom: 1rem;
-        color: #64748b;
-      }
-
-      .btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 12px 24px;
-        border-radius: 10px;
-        text-decoration: none;
-        font-weight: 600;
-        transition: all 0.3s ease;
-        border: none;
-        cursor: pointer;
-        font-size: 0.95rem;
-      }
-
-      .btn-primary {
-        background: #667eea;
-        color: white;
-      }
-
-      .btn-primary:hover {
-        background: #5a67d8;
-        transform: translateY(-2px);
-      }
-
-      .btn-secondary {
-        background: #f1f5f9;
-        color: #64748b;
-      }
-
-      .btn-secondary:hover {
-        background: #e2e8f0;
-      }
-
-      .btn-success {
-        background: #059669;
-        color: white;
-      }
-
-      .btn-success:hover {
-        background: #047857;
-        transform: translateY(-2px);
-      }
-
-      .form-actions {
-        display: flex;
-        gap: 1rem;
-        justify-content: flex-end;
-        margin-top: 2rem;
-        padding-top: 2rem;
-        border-top: 1px solid #e2e8f0;
-      }
-
-      .loading {
-        opacity: 0.6;
-        pointer-events: none;
-      }
-
-      @media (max-width: 768px) {
-        .container {
-          padding: 1rem;
-        }
-
-        .form-grid {
-          grid-template-columns: 1fr;
-        }
-
-        .form-actions {
-          flex-direction: column-reverse;
-        }
-
-        .btn {
-          justify-content: center;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <!-- Header -->
-      <div class="header">
-        <h1>✨ Create Email Campaign</h1>
-        <p>Fill in the details below and submit for admin review</p>
-      </div>
-
-      <div class="form-container">
-        <!-- Template Info -->
-        <div class="template-info">
-          <h2 class="template-name">{template.name}</h2>
-          <p class="template-description">{template.description}</p>
-          <span class="template-category">{template.category}</span>
-        </div>
-
+      <section class="form-section">
         <form id="campaignForm">
-          <input type="hidden" name="template_id" value={template.id} />
-          <input type="hidden" name="artist_name" value={`${user.first_name} ${user.last_name}`} />
+          <div class="form-group">
+            <label>Campaign Type</label>
+            <select name="campaign_type" required>
+              <option value="">Select type...</option>
+              <option value="announcement">📢 Announcement</option>
+              <option value="new_release">🎵 New Release</option>
+              <option value="event_promotion">🎪 Event Promotion</option>
+            </select>
+          </div>
 
-          <!-- Basic Campaign Info -->
-          <div class="form-section">
-            <h3 class="section-title">📧 Campaign Details</h3>
-            
-            <div class="form-group">
-              <label class="form-label" for="subject">Email Subject *</label>
-              <input 
-                type="text" 
-                id="subject" 
-                name="subject" 
-                class="form-input" 
-                required 
-                placeholder="e.g., 🎵 New Show Announcement from {user.first_name}"
-              />
-              <div class="form-help">Make it engaging! This is what subscribers see first in their inbox.</div>
+          <div class="form-group">
+            <label>Audience</label>
+            <select name="audience_type" required>
+              <option value="">Select audience...</option>
+              <option value="my_fans">👥 My Fans ({fanCount})</option>
+              <option value="everyone">🌍 Everyone ({totalUsers}) - Requires Approval</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Recipients</label>
+            <div class="recipients-display">
+              <span id="recipientCount">0</span> people will receive this email
             </div>
           </div>
 
-          <!-- Audience Selection -->
-          <div class="form-section">
-            <h3 class="section-title">🎯 Target Audience</h3>
-            
-            <div class="form-grid">
-              <div class="audience-card" data-audience="all">
-                <div class="audience-title">All Subscribers</div>
-                <span class="audience-count">{subscriberCount}</span>
-                <div class="audience-description">Everyone who signed up for emails</div>
-              </div>
-              
-              <div class="audience-card" data-audience="event_attendees">
-                <div class="audience-title">My Event Attendees</div>
-                <span class="audience-count">~</span>
-                <div class="audience-description">People who attended my events</div>
-              </div>
-              
-              <div class="audience-card" data-audience="city_based">
-                <div class="audience-title">Specific City</div>
-                <span class="audience-count">📍</span>
-                <div class="audience-description">Target by location</div>
-              </div>
-            </div>
+          <div class="form-group">
+            <label>Subject Line</label>
+            <input type="text" name="subject" id="subject" required placeholder="Enter subject...">
+          </div>
 
-            <input type="hidden" id="audienceInput" name="target_audience" value="all" />
-            
-            <div class="form-group" id="cityGroup" style="display: none; margin-top: 1rem;">
-              <label class="form-label" for="cityFilter">City</label>
-              <input 
-                type="text" 
-                id="cityFilter" 
-                name="city_filter" 
-                class="form-input" 
-                placeholder="e.g., New York, Los Angeles, Chicago"
-              />
-              <div class="form-help">Enter the city name to target subscribers in that area.</div>
+          <div class="form-group">
+            <label>Content</label>
+            <textarea name="content" id="content" rows="10" required placeholder="Write your message..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Preview</label>
+            <div class="preview">
+              <div class="preview-header">
+                <div class="preview-subject" id="previewSubject">Subject: Your subject here</div>
+              </div>
+              <div class="preview-content" id="previewContent">Your content will appear here...</div>
             </div>
           </div>
 
-          <!-- Template Variables -->
-          {variables.length > 0 && (
-            <div class="form-section">
-              <h3 class="section-title">📝 Content Variables</h3>
-              
-              <div class="variable-hints">
-                <h4>Available Variables (click to insert):</h4>
-                <div class="variable-tags">
-                  {variables.map(variable => (
-                    <span class="variable-tag" onclick={`insertVariable('${variable}')`}>
-                      {variable}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {template.category === 'event' && (
-                <div>
-                  <div class="form-group">
-                    <label class="form-label">Event Title *</label>
-                    <input type="text" name="event_title" class="form-input" required 
-                           placeholder="Your amazing event name" />
-                  </div>
-                  
-                  <div class="form-group">
-                    <label class="form-label">Event Description *</label>
-                    <textarea name="event_description" class="form-textarea" required 
-                              placeholder="Tell people what makes your event special..."></textarea>
-                  </div>
-                  
-                  <div class="form-grid">
-                    <div class="form-group">
-                      <label class="form-label">Event Date</label>
-                      <input type="date" name="event_date" class="form-input" />
-                    </div>
-                    
-                    <div class="form-group">
-                      <label class="form-label">Event Time</label>
-                      <input type="time" name="event_time" class="form-input" />
-                    </div>
-                  </div>
-                  
-                  <div class="form-grid">
-                    <div class="form-group">
-                      <label class="form-label">Venue Name</label>
-                      <input type="text" name="venue_name" class="form-input" 
-                             placeholder="e.g., Blue Note Jazz Club" />
-                    </div>
-                    
-                    <div class="form-group">
-                      <label class="form-label">Ticket Price</label>
-                      <input type="text" name="ticket_price" class="form-input" 
-                             placeholder="e.g., $25 or Free" />
-                    </div>
-                  </div>
-                  
-                  <div class="form-group">
-                    <label class="form-label">Ticket URL</label>
-                    <input type="url" name="ticket_url" class="form-input" 
-                           placeholder="https://tickets.example.com" />
-                    <div class="form-help">Where people can buy tickets or RSVP</div>
-                  </div>
-                </div>
-              )}
-
-              {template.category === 'update' && (
-                <div>
-                  <div class="form-group">
-                    <label class="form-label">Your Message *</label>
-                    <textarea name="custom_content" class="form-textarea" required 
-                              placeholder="Share your update, news, or thoughts with your fans..."></textarea>
-                    <div class="form-help">This is your chance to connect personally with your audience!</div>
-                  </div>
-                  
-                  <div class="form-grid">
-                    <div class="form-group">
-                      <label class="form-label">Instagram URL</label>
-                      <input type="url" name="instagram_url" class="form-input" 
-                             placeholder="https://instagram.com/yourhandle" />
-                    </div>
-                    
-                    <div class="form-group">
-                      <label class="form-label">Twitter URL</label>
-                      <input type="url" name="twitter_url" class="form-input" 
-                             placeholder="https://twitter.com/yourhandle" />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {template.category === 'newsletter' && (
-                <div>
-                  <div class="form-group">
-                    <label class="form-label">Newsletter Title *</label>
-                    <input type="text" name="newsletter_title" class="form-input" required 
-                           placeholder="e.g., Monthly Music Update" />
-                  </div>
-                  
-                  <div class="form-group">
-                    <label class="form-label">Newsletter Content *</label>
-                    <textarea name="newsletter_content" class="form-textarea" required 
-                              placeholder="Share what's been happening, upcoming projects, behind-the-scenes..."></textarea>
-                  </div>
-                  
-                  <div class="form-group">
-                    <label class="form-label">Upcoming Events</label>
-                    <textarea name="upcoming_events" class="form-textarea" 
-                              placeholder="List your upcoming shows, releases, or announcements..."></textarea>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <!-- Preview Section -->
-          <div class="form-section">
-            <h3 class="section-title">👀 Preview & Submit</h3>
-            
-            <div class="preview-section">
-              <h3>Email Preview</h3>
-              <p>Fill in the form above to see a preview of your email</p>
-              <button type="button" class="btn btn-secondary" id="previewBtn">
-                <span>👁️</span>
-                Generate Preview
-              </button>
-            </div>
-            
-            <div id="previewContainer" style="display: none; margin-top: 1rem;"></div>
-          </div>
-
-          <!-- Form Actions -->
           <div class="form-actions">
-            <a href="/dashboard/email-campaigns" class="btn btn-secondary">
-              <span>⬅️</span>
-              Back to Campaigns
-            </a>
-            
-            <button type="submit" class="btn btn-success" id="submitBtn">
-              <span>📤</span>
-              Submit for Admin Review
-            </button>
+            <button type="button" id="saveDraftBtn" class="btn-secondary">💾 Save Draft</button>
+            <button type="submit" class="btn-primary">📤 Submit for Review</button>
           </div>
         </form>
-      </div>
+      </section>
     </div>
+  </div>
 
-    <script>
-      // Audience selection
-      document.querySelectorAll('.audience-card').forEach(card => {
-        card.addEventListener('click', () => {
-          document.querySelectorAll('.audience-card').forEach(c => c.classList.remove('selected'));
-          card.classList.add('selected');
-          
-          const audience = card.dataset.audience;
-          document.getElementById('audienceInput').value = audience;
-          
-          const cityGroup = document.getElementById('cityGroup');
-          if (audience === 'city_based') {
-            cityGroup.style.display = 'block';
-          } else {
-            cityGroup.style.display = 'none';
-          }
-        });
-      });
+  <script type="application/json" id="templatesData">{JSON.stringify(templates)}</script>
+  <script type="application/json" id="campaignData">{JSON.stringify({ fanCount: fanCount, totalUsers: totalUsers })}</script>
+</Layout>
 
-      // Set default audience
-      document.querySelector('[data-audience="all"]').classList.add('selected');
+<style>
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+    background: #f8fafc;
+    min-height: 100vh;
+  }
 
-      // Insert variable into focused input
-      function insertVariable(variable) {
-        const activeElement = document.activeElement;
-        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
-          const cursorPos = activeElement.selectionStart;
-          const value = activeElement.value;
-          const newValue = value.slice(0, cursorPos) + `{{${variable}}}` + value.slice(cursorPos);
-          activeElement.value = newValue;
-          activeElement.focus();
-          activeElement.setSelectionRange(cursorPos + variable.length + 4, cursorPos + variable.length + 4);
-        } else {
-          alert(`Click in a text field first, then click {{${variable}}} to insert it`);
-        }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+  }
+
+  .header h1 {
+    font-size: 2rem;
+    color: #1e293b;
+    margin: 0;
+  }
+
+  .btn-back {
+    padding: 0.75rem 1.5rem;
+    background: #f1f5f9;
+    color: #475569;
+    text-decoration: none;
+    border-radius: 8px;
+    font-weight: 500;
+  }
+
+  .content {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 2rem;
+  }
+
+  .templates {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    height: fit-content;
+  }
+
+  .templates h2 {
+    margin-bottom: 1.5rem;
+    color: #1e293b;
+  }
+
+  .template-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+
+  .template-card:hover {
+    border-color: #667eea;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  .template-card h3 {
+    margin-bottom: 0.5rem;
+    color: #1e293b;
+  }
+
+  .template-card p {
+    color: #64748b;
+    font-size: 0.9rem;
+    margin: 0;
+  }
+
+  .form-section {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+  }
+
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 1rem;
+  }
+
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    outline: none;
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  }
+
+  .recipients-display {
+    padding: 1rem;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 8px;
+    color: #0369a1;
+    font-weight: 600;
+  }
+
+  .preview {
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .preview-header {
+    background: #f9fafb;
+    padding: 1rem;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .preview-subject {
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .preview-content {
+    padding: 1.5rem;
+    background: white;
+    min-height: 120px;
+    white-space: pre-wrap;
+    line-height: 1.6;
+    color: #374151;
+  }
+
+  .form-actions {
+    display: flex;
+    gap: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-weight: 500;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+
+  .btn-primary {
+    background: #667eea;
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: #5a67d8;
+  }
+
+  .btn-secondary {
+    background: #f1f5f9;
+    color: #475569;
+  }
+
+  .btn-secondary:hover {
+    background: #e2e8f0;
+  }
+
+  @media (max-width: 1024px) {
+    .content {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  // Global variables
+  let templates = [];
+  let campaignData = {};
+  
+  // Wait for DOM to be fully loaded
+  document.addEventListener('DOMContentLoaded', function() {
+    // Parse templates and campaign data
+    try {
+      templates = JSON.parse(document.getElementById('templatesData').textContent);
+    } catch (error) {
+      templates = [];
+    }
+    
+    try {
+      const campaignDataElement = document.getElementById('campaignData');
+      const campaignDataText = campaignDataElement?.textContent;
+      
+      if (campaignDataText) {
+        campaignData = JSON.parse(campaignDataText);
+      } else {
+        campaignData = { fanCount: 0, totalUsers: 0 };
       }
-
-      // Preview functionality
-      document.getElementById('previewBtn').addEventListener('click', async () => {
-        const formData = new FormData(document.getElementById('campaignForm'));
-        const data = Object.fromEntries(formData.entries());
-        
-        try {
-          const response = await fetch('/api/email/preview-campaign', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-          });
-          
-          const result = await response.json();
-          
-          if (result.success) {
-            const previewContainer = document.getElementById('previewContainer');
-            previewContainer.innerHTML = `
-              <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
-                <div style="background: #f8fafc; padding: 1rem; border-bottom: 1px solid #e2e8f0;">
-                  <strong>Subject:</strong> ${data.subject}
-                </div>
-                <div style="max-height: 400px; overflow-y: auto;">
-                  ${result.preview}
-                </div>
-              </div>
-            `;
-            previewContainer.style.display = 'block';
-          } else {
-            alert('Preview failed: ' + result.message);
-          }
-        } catch (error) {
-          alert('Failed to generate preview. Please try again.');
+    } catch (error) {
+      campaignData = { fanCount: 0, totalUsers: 0 };
+    }
+    
+    // Set up event listeners for form elements
+    const subjectInput = document.getElementById('subject');
+    const contentTextarea = document.getElementById('content');
+    const audienceSelect = document.querySelector('[name="audience_type"]');
+    const saveDraftBtn = document.getElementById('saveDraftBtn');
+    
+    // Add input event listeners for live preview
+    if (subjectInput) {
+      subjectInput.addEventListener('input', updatePreview);
+    }
+    
+    if (contentTextarea) {
+      contentTextarea.addEventListener('input', updatePreview);
+    }
+    
+    if (audienceSelect) {
+      audienceSelect.addEventListener('change', updateRecipients);
+    }
+    
+    if (saveDraftBtn) {
+      saveDraftBtn.addEventListener('click', saveDraft);
+    }
+    
+    // Set up template card clicks
+    const templateCards = document.querySelectorAll('.template-card');
+    templateCards.forEach(card => {
+      card.addEventListener('click', function() {
+        const templateId = this.getAttribute('data-template-id');
+        if (templateId) {
+          useTemplate(templateId);
         }
       });
-
-      // Form submission
-      document.getElementById('campaignForm').addEventListener('submit', async (e) => {
+    });
+    
+    // Initialize displays
+    updateRecipients();
+    updatePreview();
+    
+    // Set up form submission
+    const campaignForm = document.getElementById('campaignForm');
+    if (campaignForm) {
+      campaignForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         
-        const submitBtn = document.getElementById('submitBtn');
-        const originalText = submitBtn.innerHTML;
-        
-        // Show loading state
-        submitBtn.innerHTML = '<span>⏳</span> Submitting...';
-        submitBtn.disabled = true;
-        document.querySelector('.form-container').classList.add('loading');
+        const formData = new FormData(e.target);
+        const data = Object.fromEntries(formData);
         
         try {
-          const formData = new FormData(e.target);
-          const data = Object.fromEntries(formData.entries());
-          
-          const response = await fetch('/api/email/create-campaign', {
+          const createResponse = await fetch('/api/artist/create-campaign', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
+            body: JSON.stringify({ ...data, status: 'draft' })
           });
           
-          const result = await response.json();
+          const createResult = await createResponse.json();
           
-          if (result.success) {
-            alert('🎉 Campaign submitted for review! You\'ll be notified once an admin approves it.');
+          if (!createResult.success) {
+            alert('Error creating campaign: ' + createResult.error);
+            return;
+          }
+          
+          const submitResponse = await fetch('/api/artist/submit-campaign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ campaign_id: createResult.campaign_id })
+          });
+          
+          const submitResult = await submitResponse.json();
+          
+          if (submitResult.success) {
+            alert('Campaign created and submitted for review!');
             window.location.href = '/dashboard/email-campaigns';
           } else {
-            alert('Error: ' + result.message);
+            alert('Campaign created but failed to submit: ' + submitResult.error);
           }
+          
         } catch (error) {
-          alert('Failed to create campaign. Please try again.');
-        } finally {
-          // Reset loading state
-          submitBtn.innerHTML = originalText;
-          submitBtn.disabled = false;
-          document.querySelector('.form-container').classList.remove('loading');
+          alert('Failed to create campaign: ' + error.message);
         }
       });
-    </script>
-  </body>
-</html> 
+    }
+  });
+
+  // Update recipient count
+  function updateRecipients() {
+    const audienceType = document.querySelector('[name="audience_type"]')?.value;
+    const countElement = document.getElementById('recipientCount');
+    
+    if (!countElement) {
+      return;
+    }
+    
+    if (audienceType === 'my_fans') {
+      countElement.textContent = campaignData.fanCount || 0;
+    } else if (audienceType === 'everyone') {
+      countElement.textContent = campaignData.totalUsers || 0;
+    } else {
+      countElement.textContent = '0';
+    }
+  }
+
+  // Use template
+  function useTemplate(templateId) {
+    const template = templates.find(t => t.id === templateId);
+    if (template) {
+      const subjectEl = document.getElementById('subject');
+      const contentEl = document.getElementById('content');
+      if (subjectEl && contentEl) {
+        subjectEl.value = template.subject;
+        contentEl.value = template.content;
+        updatePreview();
+      }
+    }
+  }
+
+  // Update preview - simplified version
+  function updatePreview() {
+    const subjectElement = document.getElementById('subject');
+    const contentElement = document.getElementById('content');
+    const previewSubjectElement = document.getElementById('previewSubject');
+    const previewContentElement = document.getElementById('previewContent');
+    
+    if (!subjectElement || !contentElement || !previewSubjectElement || !previewContentElement) {
+      return;
+    }
+    
+    const subject = subjectElement.value || 'Your subject here';
+    const content = contentElement.value || 'Your content will appear here...';
+    
+    // Update subject
+    previewSubjectElement.textContent = 'Subject: ' + subject;
+    
+    // Update content - keep it simple for now
+    previewContentElement.textContent = content;
+  }
+
+  // Save draft
+  async function saveDraft() {
+    const formData = new FormData(document.getElementById('campaignForm'));
+    const data = Object.fromEntries(formData);
+    
+    if (!data.subject || !data.content || !data.campaign_type || !data.audience_type) {
+      alert('Please fill in all required fields');
+      return;
+    }
+    
+    try {
+      const response = await fetch('/api/artist/create-campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, status: 'draft' })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        alert('Campaign saved as draft!');
+        window.location.href = '/dashboard/email-campaigns';
+      } else {
+        alert('Error: ' + result.error);
+      }
+    } catch (error) {
+      alert('Failed to save campaign: ' + error.message);
+    }
+  }
+</script> 

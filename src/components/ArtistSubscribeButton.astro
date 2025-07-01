@@ -1,0 +1,464 @@
+---
+export interface Props {
+  artistId: number;
+  artistName: string;
+  isSubscribed?: boolean;
+  showSubscriberCount?: boolean;
+  size?: 'sm' | 'md' | 'lg';
+  variant?: 'primary' | 'secondary' | 'outline';
+}
+
+const { 
+  artistId, 
+  artistName, 
+  isSubscribed = false, 
+  showSubscriberCount = true,
+  size = 'md',
+  variant = 'primary'
+} = Astro.props;
+---
+
+<div class={`artist-subscribe-component ${size}`}>
+  <button 
+    id={`subscribe-btn-${artistId}`}
+    class={`subscribe-btn ${variant} ${isSubscribed ? 'subscribed' : 'unsubscribed'}`}
+    data-artist-id={artistId}
+    data-artist-name={artistName}
+    onclick={`toggleSubscription(${artistId}, '${artistName}')`}
+  >
+    <span class="btn-icon">
+      {isSubscribed ? '🔔' : '🔕'}
+    </span>
+    <span class="btn-text">
+      {isSubscribed ? 'Following' : 'Follow'}
+    </span>
+    <span class="btn-text-active" style="display: none;">
+      Following
+    </span>
+  </button>
+  
+  {showSubscriberCount && (
+    <div class="subscriber-count" id={`subscriber-count-${artistId}`}>
+      <span class="count" id={`count-${artistId}`}>0</span>
+      <span class="label">followers</span>
+    </div>
+  )}
+</div>
+
+<style>
+  .artist-subscribe-component {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  /* Size variations */
+  .artist-subscribe-component.sm .subscribe-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .artist-subscribe-component.md .subscribe-btn {
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+  }
+
+  .artist-subscribe-component.lg .subscribe-btn {
+    padding: 1rem 2rem;
+    font-size: 1.125rem;
+  }
+
+  /* Button base styles */
+  .subscribe-btn {
+    border: none;
+    border-radius: 50px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    position: relative;
+    overflow: hidden;
+    min-width: 120px;
+    justify-content: center;
+  }
+
+  .subscribe-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Primary variant */
+  .subscribe-btn.primary.unsubscribed {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+  }
+
+  .subscribe-btn.primary.unsubscribed:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+  }
+
+  .subscribe-btn.primary.subscribed {
+    background: #10b981;
+    color: white;
+    box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+  }
+
+  .subscribe-btn.primary.subscribed:hover {
+    background: #ef4444;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.6);
+  }
+
+  .subscribe-btn.primary.subscribed:hover .btn-text {
+    display: none;
+  }
+
+  .subscribe-btn.primary.subscribed:hover .btn-text-active {
+    display: inline !important;
+  }
+
+  /* Secondary variant */
+  .subscribe-btn.secondary.unsubscribed {
+    background: #f8fafc;
+    color: #475569;
+    border: 2px solid #e2e8f0;
+  }
+
+  .subscribe-btn.secondary.unsubscribed:hover {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+  }
+
+  .subscribe-btn.secondary.subscribed {
+    background: #e7f8f0;
+    color: #10b981;
+    border: 2px solid #10b981;
+  }
+
+  .subscribe-btn.secondary.subscribed:hover {
+    background: #fee2e2;
+    color: #ef4444;
+    border-color: #ef4444;
+  }
+
+  /* Outline variant */
+  .subscribe-btn.outline.unsubscribed {
+    background: transparent;
+    color: #667eea;
+    border: 2px solid #667eea;
+  }
+
+  .subscribe-btn.outline.unsubscribed:hover {
+    background: #667eea;
+    color: white;
+  }
+
+  .subscribe-btn.outline.subscribed {
+    background: transparent;
+    color: #10b981;
+    border: 2px solid #10b981;
+  }
+
+  .subscribe-btn.outline.subscribed:hover {
+    background: #ef4444;
+    color: white;
+    border-color: #ef4444;
+  }
+
+  /* Button content */
+  .btn-icon {
+    font-size: 1.2em;
+    transition: transform 0.3s ease;
+  }
+
+  .subscribe-btn:hover .btn-icon {
+    transform: scale(1.1);
+  }
+
+  .btn-text {
+    transition: opacity 0.3s ease;
+  }
+
+  .btn-text-active {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  /* Subscriber count */
+  .subscriber-count {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.875rem;
+    color: #64748b;
+  }
+
+  .subscriber-count .count {
+    font-weight: 600;
+    color: #475569;
+  }
+
+  /* Loading animation */
+  .subscribe-btn.loading {
+    position: relative;
+    color: transparent !important;
+  }
+
+  .subscribe-btn.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border: 2px solid transparent;
+    border-top: 2px solid currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  /* Success animation */
+  .subscribe-btn.success {
+    animation: successPulse 0.6s ease-out;
+  }
+
+  @keyframes successPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  }
+
+  /* Mobile responsiveness */
+  @media (max-width: 640px) {
+    .artist-subscribe-component.lg .subscribe-btn {
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+    }
+    
+    .subscribe-btn {
+      min-width: 100px;
+    }
+  }
+</style>
+
+<script>
+  // Global subscription state
+  window.subscriptionState = window.subscriptionState || new Map();
+
+  // Toggle subscription function
+  window.toggleSubscription = async (artistId, artistName) => {
+    const btn = document.getElementById(`subscribe-btn-${artistId}`);
+    const countElement = document.getElementById(`count-${artistId}`);
+    
+    if (!btn) return;
+    
+    // Prevent double clicks
+    if (btn.classList.contains('loading')) return;
+    
+    const isCurrentlySubscribed = btn.classList.contains('subscribed');
+    const newSubscriptionState = !isCurrentlySubscribed;
+    
+    // Add loading state
+    btn.classList.add('loading');
+    btn.disabled = true;
+    
+    try {
+      const response = await fetch('/api/artist/subscribe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          artist_id: artistId,
+          is_subscribed: newSubscriptionState
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Update button state
+        if (newSubscriptionState) {
+          btn.classList.remove('unsubscribed');
+          btn.classList.add('subscribed');
+          btn.querySelector('.btn-icon').textContent = '🔔';
+          btn.querySelector('.btn-text').textContent = 'Following';
+          btn.querySelector('.btn-text-active').textContent = 'Unfollow';
+        } else {
+          btn.classList.remove('subscribed');
+          btn.classList.add('unsubscribed');
+          btn.querySelector('.btn-icon').textContent = '🔕';
+          btn.querySelector('.btn-text').textContent = 'Follow';
+        }
+        
+        // Update subscriber count if available
+        if (countElement && result.subscriber_count !== undefined) {
+          countElement.textContent = result.subscriber_count;
+        }
+        
+        // Success animation
+        btn.classList.add('success');
+        setTimeout(() => btn.classList.remove('success'), 600);
+        
+        // Update global state
+        window.subscriptionState.set(artistId, newSubscriptionState);
+        
+        // Show notification
+        showNotification(
+          newSubscriptionState 
+            ? `You're now following ${artistName}! 🎵` 
+            : `You unfollowed ${artistName}`,
+          newSubscriptionState ? 'success' : 'info'
+        );
+        
+      } else {
+        throw new Error(result.error || 'Subscription failed');
+      }
+      
+    } catch (error) {
+      console.error('Subscription error:', error);
+      showNotification('Failed to update subscription. Please try again.', 'error');
+    } finally {
+      // Remove loading state
+      btn.classList.remove('loading');
+      btn.disabled = false;
+    }
+  };
+
+  // Utility function to show notifications
+  function showNotification(message, type = 'info') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.innerHTML = `
+      <div class="notification-content">
+        <span>${message}</span>
+        <button onclick="this.parentElement.parentElement.remove()">&times;</button>
+      </div>
+    `;
+    
+    // Add notification styles
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+      color: white;
+      padding: 1rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      animation: slideInRight 0.3s ease-out;
+      max-width: 300px;
+    `;
+    
+    notification.querySelector('.notification-content').style.cssText = `
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    `;
+    
+    notification.querySelector('button').style.cssText = `
+      background: none;
+      border: none;
+      color: white;
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    `;
+    
+    // Add to page
+    document.body.appendChild(notification);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+      if (notification.parentElement) {
+        notification.remove();
+      }
+    }, 5000);
+  }
+
+  // Add animation styles
+  if (!document.querySelector('#notification-styles')) {
+    const style = document.createElement('style');
+    style.id = 'notification-styles';
+    style.textContent = `
+      @keyframes slideInRight {
+        from {
+          transform: translateX(100%);
+          opacity: 0;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Load initial subscription states on page load
+  document.addEventListener('DOMContentLoaded', () => {
+    const subscribeButtons = document.querySelectorAll('.subscribe-btn');
+    const artistIds = Array.from(subscribeButtons).map(btn => 
+      parseInt(btn.dataset.artistId)
+    );
+    
+    if (artistIds.length > 0) {
+      loadSubscriptionStates(artistIds);
+    }
+  });
+
+  // Function to load subscription states
+  async function loadSubscriptionStates(artistIds) {
+    try {
+      const response = await fetch('/api/artist/subscription-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ artist_ids: artistIds })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success && result.subscriptions) {
+        result.subscriptions.forEach(sub => {
+          const btn = document.getElementById(`subscribe-btn-${sub.artist_id}`);
+          const countElement = document.getElementById(`count-${sub.artist_id}`);
+          
+          if (btn) {
+            if (sub.is_subscribed) {
+              btn.classList.remove('unsubscribed');
+              btn.classList.add('subscribed');
+              btn.querySelector('.btn-icon').textContent = '🔔';
+              btn.querySelector('.btn-text').textContent = 'Following';
+            }
+            window.subscriptionState.set(sub.artist_id, sub.is_subscribed);
+          }
+          
+          if (countElement) {
+            countElement.textContent = sub.subscriber_count || 0;
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load subscription states:', error);
+    }
+  }
+</script> 
