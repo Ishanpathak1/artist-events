@@ -697,10 +697,9 @@ const stats = await getCampaignStats(user.id);
       if (!confirm('Send this campaign now? This action cannot be undone.')) return;
       
       try {
-        const response = await fetch('/api/artist/send-campaign', {
+        const response = await fetch(`/api/admin/email-campaigns/${id}/send`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ campaign_id: id })
+          headers: { 'Content-Type': 'application/json' }
         });
         
         const result = await response.json();
@@ -712,6 +711,7 @@ const stats = await getCampaignStats(user.id);
           alert('Error: ' + result.error);
         }
       } catch (error) {
+        console.error('Send campaign error:', error);
         alert('Failed to send campaign');
       }
     };
