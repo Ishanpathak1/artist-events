@@ -280,20 +280,75 @@ async function sendCampaign(client, campaign, adminId) {
     // Initialize Resend
     const resend = new Resend(process.env.RESEND_API_KEY);
     
-    // Get campaign recipients (simplified version)
-    const recipientsResult = await client.query(`
-      SELECT DISTINCT u.id, u.email, u.first_name, u.last_name
-      FROM users u
-      JOIN email_subscriptions es ON u.id = es.user_id
-      WHERE es.is_subscribed = true 
-        AND u.email IS NOT NULL 
-        AND u.email != ''
-    `);
+    // Get campaign recipients based on audience type
+    let recipientsQuery;
+    let queryParams = [];
+
+    switch (campaign.audience_type) {
+      case 'my_fans':
+        // Only send to people subscribed to this specific artist
+        recipientsQuery = `
+          SELECT DISTINCT u.id, u.email, u.name as first_name, '' as last_name
+          FROM users u
+          JOIN artist_subscriptions as_sub ON u.id = as_sub.user_id
+          WHERE as_sub.artist_id = $1 
+            AND as_sub.is_subscribed = true
+            AND u.active = true
+            AND u.email IS NOT NULL 
+            AND u.email != ''
+        `;
+        queryParams = [campaign.artist_id];
+        break;
+
+      case 'everyone':
+        // Send to all email subscribers
+        recipientsQuery = `
+          SELECT DISTINCT u.id, u.email, u.name as first_name, '' as last_name
+          FROM users u
+          JOIN email_subscriptions es ON u.id = es.user_id
+          WHERE es.is_subscribed = true 
+            AND u.active = true
+            AND u.email IS NOT NULL 
+            AND u.email != ''
+        `;
+        queryParams = [];
+        break;
+
+      case 'event_attendees':
+        // Send to people who attended/RSVP'd to artist's events
+        recipientsQuery = `
+          SELECT DISTINCT u.id, u.email, u.name as first_name, '' as last_name
+          FROM users u
+          JOIN event_rsvps er ON u.id = er.user_id
+          JOIN events e ON er.event_id = e.id
+          WHERE e.created_by = $1
+            AND er.status = 'attending'
+            AND u.active = true
+            AND u.email IS NOT NULL 
+            AND u.email != ''
+        `;
+        queryParams = [campaign.artist_id];
+        break;
+
+      default:
+        return new Response(JSON.stringify({ 
+          error: 'Invalid audience type: ' + campaign.audience_type 
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+    }
     
+    const recipientsResult = await client.query(recipientsQuery, queryParams);
     const recipients = recipientsResult.rows;
     
+    console.log(`Campaign ${campaign.id}: Audience "${campaign.audience_type}" found ${recipients.length} recipients`);
+    recipients.forEach(r => console.log(`  - ${r.email}`));
+    
     if (recipients.length === 0) {
-      return new Response(JSON.stringify({ error: 'No recipients found' }), {
+      return new Response(JSON.stringify({ 
+        error: `No recipients found for audience type: ${campaign.audience_type}` 
+      }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       });
@@ -325,12 +380,14 @@ async function sendCampaign(client, campaign, adminId) {
             `,
             tags: [
               { name: 'campaignId', value: campaign.id.toString() },
-              { name: 'userId', value: recipient.id.toString() }
+              { name: 'userId', value: recipient.id.toString() },
+              { name: 'audienceType', value: campaign.audience_type }
             ]
           });
           emailsSent++;
+          console.log(`✅ Email sent to: ${recipient.email}`);
         } catch (error) {
-          console.error(`Failed to send email to ${recipient.email}:`, error);
+          console.error(`❌ Failed to send email to ${recipient.email}:`, error);
         }
       });
       
@@ -340,15 +397,17 @@ async function sendCampaign(client, campaign, adminId) {
     // Update campaign status
     await client.query(`
       UPDATE artist_email_campaigns 
-      SET status = 'sent', sent_at = NOW(), emails_sent = $1
-      WHERE id = $2
-    `, [emailsSent, campaign.id]);
+      SET status = 'sent', sent_at = NOW(), emails_sent = $1, total_recipients = $2
+      WHERE id = $3
+    `, [emailsSent, recipients.length, campaign.id]);
 
     return new Response(JSON.stringify({ 
       success: true, 
-      message: 'Campaign sent successfully',
+      message: `Campaign sent successfully to ${campaign.audience_type} audience`,
+      audienceType: campaign.audience_type,
       totalRecipients: recipients.length,
-      emailsSent: emailsSent
+      emailsSent: emailsSent,
+      recipients: recipients.map(r => r.email)
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
