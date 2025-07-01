@@ -737,13 +737,13 @@ const aggregatedCount = events.filter(e => e.source_type === 'api').length;
       <section class="sync-section">
         <div class="sync-header">
           <div class="sync-info">
-            <h2 class="sync-title">🔄 Live Event Sync</h2>
-            <p class="sync-description">Fetch the latest events from Ticketmaster, Eventbrite, and other sources</p>
+            <h2 class="sync-title">🎵 Music Event Sync</h2>
+            <p class="sync-description">Fetch live music events from Bandsintown, Last.fm, Ticketmaster, and curated venues</p>
           </div>
           <div class="sync-controls">
             <button class="btn btn-primary" id="syncEventsBtn">
-              <span id="syncIcon">🚀</span>
-              <span id="syncText">Sync Latest Events</span>
+              <span id="syncIcon">🎵</span>
+              <span id="syncText">Sync Music Events</span>
             </button>
             <button class="btn btn-secondary" id="refreshEventsBtn">
               <span>🔄</span>
@@ -1189,10 +1189,14 @@ const aggregatedCount = events.filter(e => e.source_type === 'api').length;
           progressFill.style.width = progress + '%';
           
           // Update progress text
-          if (progress < 30) {
-            progressText.textContent = 'Connecting to event sources...';
+          if (progress < 20) {
+            progressText.textContent = 'Connecting to music event APIs...';
+          } else if (progress < 40) {
+            progressText.textContent = 'Fetching Bandsintown concerts...';
           } else if (progress < 60) {
-            progressText.textContent = 'Fetching latest events...';
+            progressText.textContent = 'Syncing Last.fm events...';
+          } else if (progress < 80) {
+            progressText.textContent = 'Loading Ticketmaster shows...';
           } else if (progress < 90) {
             progressText.textContent = 'Processing and saving events...';
           }
@@ -1205,8 +1209,8 @@ const aggregatedCount = events.filter(e => e.source_type === 'api').length;
         refreshEventsBtn.disabled = false;
         syncProgress.style.display = 'none';
         progressFill.style.width = '0%';
-        syncIcon.textContent = '🚀';
-        syncText.textContent = 'Sync Latest Events';
+        syncIcon.textContent = '🎵';
+        syncText.textContent = 'Sync Music Events';
       }
 
       // Auto-refresh indicator for live events

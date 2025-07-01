@@ -6,15 +6,10 @@
     "NODE_ENV": "production"
   },
   "regions": ["iad1"],
-  "functions": {
-    "src/pages/api/**/*.js": {
-      "maxDuration": 60
-    }
-  },
   "crons": [
     {
       "path": "/api/sync-free-events",
-      "schedule": "0 */6 * * *"
+      "schedule": "0 2 * * *"
     }
   ],
   "headers": [
