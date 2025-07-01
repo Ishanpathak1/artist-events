@@ -21,10 +21,10 @@ export async function POST({ request }) {
     }
 
     const body = await request.json();
-    const { artist_id, is_subscribed } = body;
+    const { artistId, action } = body;
 
     // Validate input
-    if (!artist_id || typeof artist_id !== 'number') {
+    if (!artistId || typeof artistId !== 'number') {
       return new Response(JSON.stringify({
         success: false,
         error: 'Valid artist ID is required'
@@ -34,15 +34,17 @@ export async function POST({ request }) {
       });
     }
 
-    if (typeof is_subscribed !== 'boolean') {
+    if (!action || !['subscribe', 'unsubscribe'].includes(action)) {
       return new Response(JSON.stringify({
         success: false,
-        error: 'Subscription status must be boolean'
+        error: 'Valid action is required (subscribe or unsubscribe)'
       }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       });
     }
+
+    const is_subscribed = action === 'subscribe';
 
     const client = await pool.connect();
     
@@ -52,7 +54,7 @@ export async function POST({ request }) {
       // Check if artist exists
       const artistCheck = await client.query(
         'SELECT id, name FROM users WHERE id = $1',
-        [artist_id]
+        [artistId]
       );
 
       if (artistCheck.rows.length === 0) {
@@ -67,7 +69,7 @@ export async function POST({ request }) {
       }
 
       // Can't subscribe to yourself
-      if (artist_id === authResult.user.id) {
+      if (artistId === authResult.user.id) {
         await client.query('ROLLBACK');
         return new Response(JSON.stringify({
           success: false,
@@ -83,7 +85,7 @@ export async function POST({ request }) {
         SELECT id, is_subscribed 
         FROM artist_subscriptions 
         WHERE user_id = $1 AND artist_id = $2
-      `, [authResult.user.id, artist_id]);
+      `, [authResult.user.id, artistId]);
 
       let result;
 
@@ -91,17 +93,17 @@ export async function POST({ request }) {
         // Update existing subscription
         result = await client.query(`
           UPDATE artist_subscriptions 
-          SET is_subscribed = $1, updated_at = CURRENT_TIMESTAMP
+          SET is_subscribed = $1, subscribed_at = CASE WHEN $1 THEN CURRENT_TIMESTAMP ELSE subscribed_at END, unsubscribed_at = CASE WHEN NOT $1 THEN CURRENT_TIMESTAMP ELSE NULL END
           WHERE user_id = $2 AND artist_id = $3
           RETURNING id
-        `, [is_subscribed, authResult.user.id, artist_id]);
+        `, [is_subscribed, authResult.user.id, artistId]);
       } else {
         // Create new subscription
         result = await client.query(`
-          INSERT INTO artist_subscriptions (user_id, artist_id, is_subscribed, created_at, updated_at)
-          VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          INSERT INTO artist_subscriptions (user_id, artist_id, is_subscribed, subscribed_at)
+          VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
           RETURNING id
-        `, [authResult.user.id, artist_id, is_subscribed]);
+        `, [authResult.user.id, artistId, is_subscribed]);
       }
 
       // Get updated subscriber count
@@ -109,7 +111,7 @@ export async function POST({ request }) {
         SELECT COUNT(*) as count 
         FROM artist_subscriptions 
         WHERE artist_id = $1 AND is_subscribed = true
-      `, [artist_id]);
+      `, [artistId]);
 
       const subscriberCount = parseInt(countResult.rows[0].count);
 
@@ -122,8 +124,8 @@ export async function POST({ request }) {
         success: true,
         message: is_subscribed ? 'Successfully subscribed' : 'Successfully unsubscribed',
         subscription_id: result.rows[0].id,
-        subscriber_count: subscriberCount,
-        is_subscribed: is_subscribed
+        subscriberCount: subscriberCount,
+        isSubscribed: is_subscribed
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }

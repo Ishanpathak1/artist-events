@@ -1,5 +1,6 @@
 ---
 import Navigation from '../../components/Navigation.astro';
+import ArtistSubscribeButton from '../../components/ArtistSubscribeButton.astro';
 import { Pool } from 'pg';
 
 // Database connection
@@ -21,12 +22,19 @@ async function getPublishedEvents() {
         e.image_url, e.ticket_price, e.event_type, e.status, e.source_type,
         e.ticket_url, e.custom_location,
         v.name as venue_name, v.address, v.city, v.state,
-        array_agg(DISTINCT a.name) as artists,
-        array_agg(DISTINCT t.name) as tags
+        array_agg(DISTINCT a.name) FILTER (WHERE a.name IS NOT NULL) as artists,
+        array_agg(DISTINCT t.name) FILTER (WHERE t.name IS NOT NULL) as tags,
+        array_agg(DISTINCT jsonb_build_object(
+          'id', u.id,
+          'name', COALESCE(u.name, a.name),
+          'stage_name', ap.stage_name
+        )) FILTER (WHERE u.id IS NOT NULL) as artist_users
       FROM events e
       LEFT JOIN venues v ON e.venue_id = v.id
       LEFT JOIN event_artists ea ON e.id = ea.event_id
       LEFT JOIN artists a ON ea.artist_id = a.id
+      LEFT JOIN users u ON u.name = a.name AND u.user_type = 'artist'
+      LEFT JOIN artist_profiles ap ON u.id = ap.user_id
       LEFT JOIN event_tags et ON e.id = et.event_id
       LEFT JOIN tags t ON et.tag_id = t.id
       WHERE e.status = 'published'
@@ -578,6 +586,20 @@ const aggregatedCount = events.filter(e => e.source_type === 'api').length;
         font-weight: 500;
       }
 
+      /* Artist Subscribe Actions */
+      .event-artist-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(226, 232, 240, 0.6);
+      }
+
+      .event-artist-actions .artist-subscribe-component {
+        margin: 0;
+      }
+
       /* No events state */
       .no-events {
         text-align: center;
@@ -893,6 +915,21 @@ const aggregatedCount = events.filter(e => e.source_type === 'api').length;
                     <div class="event-artists">
                       <span>🎤</span>
                       {event.artists.filter(Boolean).join(', ')}
+                    </div>
+                  )}
+                  
+                  {/* Artist Subscribe Buttons */}
+                  {event.artist_users && event.artist_users.filter(u => u.id).length > 0 && (
+                    <div class="event-artist-actions">
+                      {event.artist_users.filter(u => u.id).map(artist => (
+                        <ArtistSubscribeButton 
+                          artistId={artist.id}
+                          artistName={artist.stage_name || artist.name}
+                          size="sm"
+                          variant="outline"
+                          showSubscriberCount={false}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
@@ -1240,6 +1277,160 @@ const aggregatedCount = events.filter(e => e.source_type === 'api').length;
 
       // Initialize live event indicators
       addLiveEventIndicators();
+
+      // Artist Subscribe Functionality
+      window.toggleSubscription = async function(artistId, artistName) {
+        const btn = document.getElementById(`subscribe-btn-${artistId}`);
+        const countEl = document.getElementById(`count-${artistId}`);
+        
+        if (!btn) return;
+        
+        const isCurrentlySubscribed = btn.classList.contains('subscribed');
+        
+        try {
+          btn.disabled = true;
+          btn.style.opacity = '0.6';
+          
+          const response = await fetch('/api/artist/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              artistId: artistId,
+              action: isCurrentlySubscribed ? 'unsubscribe' : 'subscribe'
+            })
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            // Update button state
+            if (isCurrentlySubscribed) {
+              btn.classList.remove('subscribed');
+              btn.classList.add('unsubscribed');
+              btn.querySelector('.btn-text').textContent = 'Follow';
+              btn.querySelector('.btn-icon').textContent = '🔕';
+            } else {
+              btn.classList.remove('unsubscribed');
+              btn.classList.add('subscribed');
+              btn.querySelector('.btn-text').textContent = 'Following';
+              btn.querySelector('.btn-icon').textContent = '🔔';
+            }
+            
+            // Update subscriber count if element exists
+            if (countEl) {
+              countEl.textContent = result.subscriberCount || 0;
+            }
+            
+            // Show notification
+            showSubscribeNotification(
+              isCurrentlySubscribed 
+                ? `Unfollowed ${artistName}` 
+                : `Now following ${artistName}!`,
+              isCurrentlySubscribed ? 'info' : 'success'
+            );
+          } else {
+            throw new Error(result.error || 'Subscription failed');
+          }
+        } catch (error) {
+          console.error('Subscription error:', error);
+          showSubscribeNotification('Please log in to follow artists', 'error');
+        } finally {
+          btn.disabled = false;
+          btn.style.opacity = '1';
+        }
+      };
+
+      // Simple notification system for subscriptions
+      function showSubscribeNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+          color: white;
+          padding: 12px 20px;
+          border-radius: 8px;
+          font-weight: 500;
+          z-index: 1000;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          animation: slideInNotif 0.3s ease;
+        `;
+        notification.textContent = message;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+          notification.style.animation = 'slideOutNotif 0.3s ease';
+          setTimeout(() => notification.remove(), 300);
+        }, 3000);
+      }
+
+      // Load subscription states on page load
+      async function loadSubscriptionStates() {
+        try {
+          // Get all artist IDs on the page
+          const artistIds = Array.from(document.querySelectorAll('[data-artist-id]'))
+            .map(btn => parseInt(btn.dataset.artistId))
+            .filter((id, index, arr) => arr.indexOf(id) === index && !isNaN(id)); // Remove duplicates and invalid IDs
+          
+          if (artistIds.length === 0) return;
+          
+          // Check subscription status for all artists
+          const response = await fetch('/api/artist/subscription-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ artistIds })
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            
+            // Update button states
+            result.subscriptions.forEach(subscription => {
+              const btn = document.getElementById(`subscribe-btn-${subscription.artistId}`);
+              const countEl = document.getElementById(`count-${subscription.artistId}`);
+              
+              if (btn) {
+                if (subscription.isSubscribed) {
+                  btn.classList.remove('unsubscribed');
+                  btn.classList.add('subscribed');
+                  btn.querySelector('.btn-text').textContent = 'Following';
+                  btn.querySelector('.btn-icon').textContent = '🔔';
+                } else {
+                  btn.classList.remove('subscribed');
+                  btn.classList.add('unsubscribed');
+                  btn.querySelector('.btn-text').textContent = 'Follow';
+                  btn.querySelector('.btn-icon').textContent = '🔕';
+                }
+              }
+              
+              if (countEl) {
+                countEl.textContent = subscription.subscriberCount || 0;
+              }
+            });
+          }
+        } catch (error) {
+          console.error('Error loading subscription states:', error);
+        }
+      }
+
+      // Add notification keyframes for subscriptions
+      const subscribeStyle = document.createElement('style');
+      subscribeStyle.textContent = `
+        @keyframes slideInNotif {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOutNotif {
+          from { transform: translateX(0); opacity: 1; }
+          to { transform: translateX(100%); opacity: 0; }
+        }
+      `;
+      document.head.appendChild(subscribeStyle);
+
+      // Load subscription states after page loads
+      loadSubscriptionStates();
     </script>
   </body>
 </html>

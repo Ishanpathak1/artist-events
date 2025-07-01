@@ -1,0 +1,1084 @@
+---
+import Navigation from '../../components/Navigation.astro';
+import ArtistSubscribeButton from '../../components/ArtistSubscribeButton.astro';
+import { Pool } from 'pg';
+
+// Database connection
+const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
+  'postgresql://ishanpathak@localhost:5432/artist_events';
+
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+// Get all artists with their profiles
+async function getArtists() {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT DISTINCT
+        u.id, u.name, u.bio, u.location, u.avatar_url,
+        ap.stage_name, ap.genres, ap.experience_level, ap.verified_artist,
+        COUNT(DISTINCT as2.user_id) as follower_count
+      FROM users u
+      LEFT JOIN artist_profiles ap ON u.id = ap.user_id
+      LEFT JOIN artist_subscriptions as2 ON u.id = as2.artist_id
+      WHERE u.user_type = 'artist' AND u.active = true
+      GROUP BY u.id, u.name, u.bio, u.location, u.avatar_url,
+               ap.stage_name, ap.genres, ap.experience_level, ap.verified_artist
+      ORDER BY ap.verified_artist DESC NULLS LAST, follower_count DESC, u.name
+    `);
+    
+    return result.rows;
+  } finally {
+    client.release();
+  }
+}
+
+const artists = await getArtists();
+
+// Get unique values for filters
+const allGenres = [...new Set(artists.flatMap(a => a.genres || []).filter(Boolean))];
+const locations = [...new Set(artists.map(a => a.location).filter(Boolean))];
+const experienceLevels = [...new Set(artists.map(a => a.experience_level).filter(Boolean))];
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Discover Artists - Artist Events</title>
+    <meta name="description" content="Discover and follow amazing artists. Browse profiles, see their events, and get notified about their latest updates." />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        line-height: 1.6;
+        color: #1e293b;
+        background: #f8fafc;
+      }
+
+      /* Page Header */
+      .page-header {
+        background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+        color: white;
+        padding: 4rem 0 2rem;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .page-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="1" fill="rgba(255,255,255,0.1)"/></svg>');
+        background-size: 50px 50px;
+        opacity: 0.1;
+      }
+
+      .header-container {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 0 20px;
+        position: relative;
+        z-index: 1;
+      }
+
+      .page-title {
+        font-size: 3rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+        line-height: 1.1;
+      }
+
+      .page-subtitle {
+        font-size: 1.2rem;
+        opacity: 0.9;
+        margin-bottom: 2rem;
+        max-width: 600px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      .header-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 2rem;
+        max-width: 500px;
+        margin: 0 auto;
+      }
+
+      .stat-item {
+        text-align: center;
+      }
+
+      .stat-number {
+        font-size: 2rem;
+        font-weight: 700;
+        display: block;
+        margin-bottom: 0.25rem;
+      }
+
+      .stat-label {
+        opacity: 0.8;
+        font-size: 0.9rem;
+      }
+
+      /* Main Content */
+      .main-content {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 3rem 20px;
+      }
+
+      /* Filter Section */
+      .filter-section {
+        background: white;
+        border-radius: 20px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+      }
+
+      .filter-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+
+      .filter-title {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #1e293b;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .filter-toggle {
+        display: none;
+        background: #8b5cf6;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 500;
+      }
+
+      .filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        align-items: end;
+      }
+
+      .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .filter-label {
+        font-weight: 600;
+        color: #374151;
+        font-size: 0.9rem;
+      }
+
+      .filter-input, .filter-select {
+        padding: 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+        background: white;
+      }
+
+      .filter-input:focus, .filter-select:focus {
+        outline: none;
+        border-color: #8b5cf6;
+        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+      }
+
+      .filter-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: flex-end;
+      }
+
+      .btn {
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-weight: 600;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        border: none;
+        font-size: 0.9rem;
+      }
+
+      .btn-primary {
+        background: #8b5cf6;
+        color: white;
+      }
+
+      .btn-primary:hover {
+        background: #7c3aed;
+        transform: translateY(-2px);
+      }
+
+      .btn-secondary {
+        background: white;
+        color: #6b7280;
+        border: 1px solid #d1d5db;
+      }
+
+      .btn-secondary:hover {
+        background: #f9fafb;
+        border-color: #8b5cf6;
+        color: #8b5cf6;
+      }
+
+      /* Results Section */
+      .results-section {
+        background: white;
+        border-radius: 20px;
+        padding: 2rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+      }
+
+      .results-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+
+      .results-count {
+        font-weight: 600;
+        color: #374151;
+      }
+
+      .sort-controls {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+      }
+
+      /* Artists Grid */
+      .artists-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 2rem;
+      }
+
+      .artist-card {
+        background: white;
+        border-radius: 20px;
+        padding: 2rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+        border: 1px solid rgba(226, 232, 240, 0.8);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .artist-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+      }
+
+      .artist-card:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      }
+
+      .artist-header {
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+      }
+
+      .artist-avatar {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 700;
+        font-size: 1.5rem;
+        flex-shrink: 0;
+        position: relative;
+      }
+
+      .artist-avatar img {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        object-fit: cover;
+      }
+
+      .verified-badge {
+        position: absolute;
+        bottom: -2px;
+        right: -2px;
+        background: #10b981;
+        color: white;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.7rem;
+        border: 2px solid white;
+      }
+
+      .artist-info {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .artist-name {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 0.25rem;
+        line-height: 1.3;
+      }
+
+      .artist-stage-name {
+        color: #8b5cf6;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        font-size: 0.9rem;
+      }
+
+      .artist-location {
+        color: #64748b;
+        font-size: 0.85rem;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+      }
+
+      .artist-genres {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+      }
+
+      .genre-tag {
+        background: rgba(139, 92, 246, 0.1);
+        color: #8b5cf6;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 500;
+      }
+
+      .artist-bio {
+        color: #64748b;
+        font-size: 0.9rem;
+        line-height: 1.5;
+        margin-bottom: 1.5rem;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .artist-stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+        padding: 1rem;
+        background: #f8fafc;
+        border-radius: 12px;
+      }
+
+      .stat-item-small {
+        text-align: center;
+      }
+
+      .stat-number-small {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #1e293b;
+        display: block;
+      }
+
+      .stat-label-small {
+        font-size: 0.7rem;
+        color: #64748b;
+        text-transform: uppercase;
+        font-weight: 500;
+      }
+
+      .artist-actions {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+      }
+
+      .artist-actions .artist-subscribe-component {
+        flex: 1;
+      }
+
+      .view-profile-btn {
+        padding: 8px 16px;
+        background: transparent;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        color: #6b7280;
+        text-decoration: none;
+        font-size: 0.85rem;
+        transition: all 0.3s ease;
+      }
+
+      .view-profile-btn:hover {
+        border-color: #8b5cf6;
+        color: #8b5cf6;
+      }
+
+      /* No artists state */
+      .no-artists {
+        text-align: center;
+        padding: 4rem 2rem;
+      }
+
+      .no-artists h3 {
+        color: #64748b;
+        margin-bottom: 1rem;
+        font-size: 1.5rem;
+      }
+
+      .no-artists p {
+        color: #64748b;
+        margin-bottom: 2rem;
+        max-width: 400px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      /* Responsive Design */
+      @media (max-width: 768px) {
+        .page-title {
+          font-size: 2.5rem;
+        }
+
+        .filter-toggle {
+          display: block;
+        }
+
+        .filter-grid {
+          display: none;
+        }
+
+        .filter-grid.active {
+          display: grid;
+          grid-template-columns: 1fr;
+        }
+
+        .artists-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .results-header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .artist-card {
+          padding: 1.5rem;
+        }
+
+        .artist-stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .artist-actions {
+          flex-direction: column;
+          gap: 0.75rem;
+        }
+
+        .artist-actions .artist-subscribe-component {
+          width: 100%;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .main-content {
+          padding: 2rem 16px;
+        }
+
+        .header-stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .artist-header {
+          flex-direction: column;
+          text-align: center;
+        }
+
+        .artist-info {
+          text-align: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <Navigation currentPage="artists" />
+
+    <!-- Page Header -->
+    <section class="page-header">
+      <div class="header-container">
+        <h1 class="page-title">🎨 Discover Artists</h1>
+        <p class="page-subtitle">
+          Find and follow talented artists from around the world. Get notified about their latest events, releases, and updates.
+        </p>
+        
+        <div class="header-stats">
+          <div class="stat-item">
+            <span class="stat-number">{artists.length}</span>
+            <span class="stat-label">Artists</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">{allGenres.length}</span>
+            <span class="stat-label">Genres</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">{locations.length}</span>
+            <span class="stat-label">Cities</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-number">{artists.filter(a => a.verified_artist).length}</span>
+            <span class="stat-label">Verified</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Filter Section -->
+      <section class="filter-section">
+        <div class="filter-header">
+          <h2 class="filter-title">
+            <span>🔍</span>
+            Find Your Artists
+          </h2>
+          <button class="filter-toggle" id="filterToggle">Show Filters</button>
+        </div>
+
+        <div class="filter-grid" id="filterGrid">
+          <div class="filter-group">
+            <label class="filter-label">Search Artists</label>
+            <input 
+              type="text" 
+              class="filter-input" 
+              id="searchInput" 
+              placeholder="Search by name, stage name, or bio..."
+            />
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">Genre</label>
+            <select class="filter-select" id="genreFilter">
+              <option value="">All Genres</option>
+              {allGenres.map(genre => (
+                <option value={genre}>{genre}</option>
+              ))}
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">Location</label>
+            <select class="filter-select" id="locationFilter">
+              <option value="">All Locations</option>
+              {locations.map(location => (
+                <option value={location}>{location}</option>
+              ))}
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">Experience</label>
+            <select class="filter-select" id="experienceFilter">
+              <option value="">All Levels</option>
+              {experienceLevels.map(level => (
+                <option value={level}>{level}</option>
+              ))}
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label class="filter-label">Verification</label>
+            <select class="filter-select" id="verifiedFilter">
+              <option value="">All Artists</option>
+              <option value="verified">Verified Only</option>
+              <option value="unverified">Unverified Only</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="filter-actions">
+          <button class="btn btn-secondary" id="clearFilters">Clear All</button>
+          <button class="btn btn-primary" id="applyFilters">Apply Filters</button>
+        </div>
+      </section>
+
+      <!-- Results Section -->
+      <section class="results-section">
+        <div class="results-header">
+          <div class="results-count" id="resultsCount">
+            Showing all {artists.length} artists
+          </div>
+          <div class="sort-controls">
+            <label for="sortSelect" style="font-weight: 500; color: #374151;">Sort by:</label>
+            <select class="filter-select" id="sortSelect">
+              <option value="followers-desc">Most Followers</option>
+              <option value="followers-asc">Least Followers</option>
+              <option value="events-desc">Most Events</option>
+              <option value="events-asc">Least Events</option>
+              <option value="name-asc">Name A-Z</option>
+              <option value="name-desc">Name Z-A</option>
+              <option value="verified-first">Verified First</option>
+            </select>
+          </div>
+        </div>
+
+        {artists.length > 0 ? (
+          <div class="artists-grid" id="artistsGrid">
+            {artists.map(artist => (
+              <div class="artist-card" 
+                   data-genres={JSON.stringify(artist.genres || [])}
+                   data-location={artist.location || ''}
+                   data-experience={artist.experience_level || ''}
+                   data-verified={artist.verified_artist || false}
+                   data-follower-count={artist.follower_count || 0}
+                   data-events-count={artist.events_count || 0}>
+                
+                <div class="artist-header">
+                  <div class="artist-avatar">
+                    {artist.avatar_url ? (
+                      <img src={artist.avatar_url} alt={artist.name} />
+                    ) : (
+                      (artist.stage_name || artist.name).split(' ').map(n => n[0]).join('').toUpperCase()
+                    )}
+                    {artist.verified_artist && (
+                      <div class="verified-badge">✓</div>
+                    )}
+                  </div>
+                  
+                  <div class="artist-info">
+                    <h3 class="artist-name">{artist.name}</h3>
+                    {artist.stage_name && artist.stage_name !== artist.name && (
+                      <div class="artist-stage-name">"{artist.stage_name}"</div>
+                    )}
+                    {artist.location && (
+                      <div class="artist-location">
+                        <span>📍</span>
+                        {artist.location}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {artist.genres && artist.genres.length > 0 && (
+                  <div class="artist-genres">
+                    {artist.genres.slice(0, 3).map(genre => (
+                      <span class="genre-tag">{genre}</span>
+                    ))}
+                    {artist.genres.length > 3 && (
+                      <span class="genre-tag">+{artist.genres.length - 3}</span>
+                    )}
+                  </div>
+                )}
+
+                {artist.bio && (
+                  <p class="artist-bio">{artist.bio}</p>
+                )}
+
+                <div class="artist-stats">
+                  <div class="stat-item-small">
+                    <span class="stat-number-small">{artist.follower_count || 0}</span>
+                    <span class="stat-label-small">Followers</span>
+                  </div>
+                  <div class="stat-item-small">
+                    <span class="stat-number-small">{artist.events_count || 0}</span>
+                    <span class="stat-label-small">Events</span>
+                  </div>
+                  <div class="stat-item-small">
+                    <span class="stat-number-small">{artist.experience_level || 'N/A'}</span>
+                    <span class="stat-label-small">Level</span>
+                  </div>
+                </div>
+
+                <div class="artist-actions">
+                  <ArtistSubscribeButton 
+                    artistId={artist.id}
+                    artistName={artist.stage_name || artist.name}
+                    size="md"
+                    variant="primary"
+                    showSubscriberCount={true}
+                  />
+                  <a href={`/artists/${artist.id}`} class="view-profile-btn">
+                    View Profile
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div class="no-artists">
+            <h3>🎨 No artists found!</h3>
+            <p>We're growing our artist community every day. Check back soon for new talented artists to follow.</p>
+            <a href="/auth/register" class="btn btn-primary">Join as Artist</a>
+          </div>
+        )}
+      </section>
+    </main>
+
+    <!-- Artist Subscription JavaScript -->
+    <script>
+      // Global functions for artist subscription
+      window.toggleSubscription = async function(artistId, artistName) {
+        const btn = document.getElementById(`subscribe-btn-${artistId}`);
+        const countEl = document.getElementById(`count-${artistId}`);
+        
+        if (!btn) return;
+        
+        const isCurrentlySubscribed = btn.classList.contains('subscribed');
+        
+        try {
+          btn.disabled = true;
+          btn.style.opacity = '0.6';
+          
+          const response = await fetch('/api/artist/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              artistId: artistId,
+              action: isCurrentlySubscribed ? 'unsubscribe' : 'subscribe'
+            })
+          });
+          
+          const result = await response.json();
+          
+          if (result.success) {
+            // Update button state
+            if (isCurrentlySubscribed) {
+              btn.classList.remove('subscribed');
+              btn.classList.add('unsubscribed');
+              btn.querySelector('.btn-text').textContent = 'Follow';
+              btn.querySelector('.btn-icon').textContent = '🔕';
+            } else {
+              btn.classList.remove('unsubscribed');
+              btn.classList.add('subscribed');
+              btn.querySelector('.btn-text').textContent = 'Following';
+              btn.querySelector('.btn-icon').textContent = '🔔';
+            }
+            
+            // Update subscriber count if element exists
+            if (countEl) {
+              countEl.textContent = result.subscriberCount || 0;
+            }
+            
+            // Show notification
+            showNotification(
+              isCurrentlySubscribed 
+                ? `Unfollowed ${artistName}` 
+                : `Now following ${artistName}! You'll get email updates about their events.`,
+              isCurrentlySubscribed ? 'info' : 'success'
+            );
+          } else {
+            throw new Error(result.error || 'Subscription failed');
+          }
+        } catch (error) {
+          console.error('Subscription error:', error);
+          showNotification('Please log in to follow artists', 'error');
+        } finally {
+          btn.disabled = false;
+          btn.style.opacity = '1';
+        }
+      };
+
+      // Filter and search functionality
+      const filterToggle = document.getElementById('filterToggle');
+      const filterGrid = document.getElementById('filterGrid');
+      const searchInput = document.getElementById('searchInput');
+      const genreFilter = document.getElementById('genreFilter');
+      const locationFilter = document.getElementById('locationFilter');
+      const experienceFilter = document.getElementById('experienceFilter');
+      const verifiedFilter = document.getElementById('verifiedFilter');
+      const sortSelect = document.getElementById('sortSelect');
+      const artistsGrid = document.getElementById('artistsGrid');
+      const resultsCount = document.getElementById('resultsCount');
+      const clearFilters = document.getElementById('clearFilters');
+      const applyFilters = document.getElementById('applyFilters');
+
+      let allArtists = Array.from(artistsGrid.querySelectorAll('.artist-card'));
+      let filteredArtists = [...allArtists];
+
+      // Toggle filter visibility on mobile
+      filterToggle.addEventListener('click', () => {
+        filterGrid.classList.toggle('active');
+        const isVisible = filterGrid.classList.contains('active');
+        filterToggle.textContent = isVisible ? 'Hide Filters' : 'Show Filters';
+      });
+
+      function filterArtists() {
+        const searchTerm = searchInput.value.toLowerCase();
+        const selectedGenre = genreFilter.value;
+        const selectedLocation = locationFilter.value;
+        const selectedExperience = experienceFilter.value;
+        const selectedVerified = verifiedFilter.value;
+
+        filteredArtists = allArtists.filter(artist => {
+          // Search filter
+          const name = artist.querySelector('.artist-name').textContent.toLowerCase();
+          const stageName = artist.querySelector('.artist-stage-name')?.textContent.toLowerCase() || '';
+          const bio = artist.querySelector('.artist-bio')?.textContent.toLowerCase() || '';
+          
+          const matchesSearch = !searchTerm || 
+            name.includes(searchTerm) || 
+            stageName.includes(searchTerm) ||
+            bio.includes(searchTerm);
+
+          // Genre filter
+          const genres = JSON.parse(artist.dataset.genres || '[]');
+          const matchesGenre = !selectedGenre || genres.includes(selectedGenre);
+
+          // Location filter
+          const location = artist.dataset.location;
+          const matchesLocation = !selectedLocation || location === selectedLocation;
+
+          // Experience filter
+          const experience = artist.dataset.experience;
+          const matchesExperience = !selectedExperience || experience === selectedExperience;
+
+          // Verified filter
+          const isVerified = artist.dataset.verified === 'true';
+          let matchesVerified = true;
+          if (selectedVerified === 'verified') matchesVerified = isVerified;
+          else if (selectedVerified === 'unverified') matchesVerified = !isVerified;
+
+          return matchesSearch && matchesGenre && matchesLocation && matchesExperience && matchesVerified;
+        });
+
+        sortArtists();
+        displayArtists();
+        updateResultsCount();
+      }
+
+      function sortArtists() {
+        const sortBy = sortSelect.value;
+        
+        filteredArtists.sort((a, b) => {
+          switch (sortBy) {
+            case 'followers-desc':
+              return parseInt(b.dataset.followerCount) - parseInt(a.dataset.followerCount);
+            case 'followers-asc':
+              return parseInt(a.dataset.followerCount) - parseInt(b.dataset.followerCount);
+            case 'events-desc':
+              return parseInt(b.dataset.eventsCount) - parseInt(a.dataset.eventsCount);
+            case 'events-asc':
+              return parseInt(a.dataset.eventsCount) - parseInt(b.dataset.eventsCount);
+            case 'name-asc':
+              return a.querySelector('.artist-name').textContent.localeCompare(
+                b.querySelector('.artist-name').textContent
+              );
+            case 'name-desc':
+              return b.querySelector('.artist-name').textContent.localeCompare(
+                a.querySelector('.artist-name').textContent
+              );
+            case 'verified-first':
+              const aVerified = a.dataset.verified === 'true';
+              const bVerified = b.dataset.verified === 'true';
+              if (aVerified && !bVerified) return -1;
+              if (!aVerified && bVerified) return 1;
+              return parseInt(b.dataset.followerCount) - parseInt(a.dataset.followerCount);
+            default:
+              return 0;
+          }
+        });
+      }
+
+      function displayArtists() {
+        artistsGrid.innerHTML = '';
+        
+        if (filteredArtists.length === 0) {
+          artistsGrid.innerHTML = `
+            <div style="grid-column: 1 / -1;" class="no-artists">
+              <h3>🔍 No artists found</h3>
+              <p>Try adjusting your search criteria or filters to find more artists.</p>
+              <button class="btn btn-primary" onclick="clearAllFilters()">Clear Filters</button>
+            </div>
+          `;
+        } else {
+          filteredArtists.forEach(artist => artistsGrid.appendChild(artist));
+        }
+      }
+
+      function updateResultsCount() {
+        resultsCount.textContent = `Showing ${filteredArtists.length} artists`;
+      }
+
+      function clearAllFilters() {
+        searchInput.value = '';
+        genreFilter.value = '';
+        locationFilter.value = '';
+        experienceFilter.value = '';
+        verifiedFilter.value = '';
+        sortSelect.value = 'followers-desc';
+        filterArtists();
+      }
+
+      // Event listeners
+      searchInput.addEventListener('input', filterArtists);
+      genreFilter.addEventListener('change', filterArtists);
+      locationFilter.addEventListener('change', filterArtists);
+      experienceFilter.addEventListener('change', filterArtists);
+      verifiedFilter.addEventListener('change', filterArtists);
+      sortSelect.addEventListener('change', filterArtists);
+      clearFilters.addEventListener('click', clearAllFilters);
+      applyFilters.addEventListener('click', filterArtists);
+
+      // Real-time search with debounce
+      let searchTimeout;
+      searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(filterArtists, 300);
+      });
+
+      // Simple notification system
+      function showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+          color: white;
+          padding: 12px 20px;
+          border-radius: 8px;
+          font-weight: 500;
+          z-index: 1000;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          animation: slideIn 0.3s ease;
+          max-width: 300px;
+        `;
+        notification.textContent = message;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+          notification.style.animation = 'slideOut 0.3s ease';
+          setTimeout(() => notification.remove(), 300);
+        }, 4000);
+      }
+
+      // Load subscription states on page load
+      async function loadSubscriptionStates() {
+        try {
+          // Get all artist IDs on the page
+          const artistIds = Array.from(document.querySelectorAll('[data-artist-id]'))
+            .map(btn => parseInt(btn.dataset.artistId))
+            .filter((id, index, arr) => arr.indexOf(id) === index && !isNaN(id));
+          
+          if (artistIds.length === 0) return;
+          
+          // Check subscription status for all artists
+          const response = await fetch('/api/artist/subscription-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ artistIds })
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            
+            // Update button states
+            result.subscriptions.forEach(subscription => {
+              const btn = document.getElementById(`subscribe-btn-${subscription.artistId}`);
+              const countEl = document.getElementById(`count-${subscription.artistId}`);
+              
+              if (btn) {
+                if (subscription.isSubscribed) {
+                  btn.classList.remove('unsubscribed');
+                  btn.classList.add('subscribed');
+                  btn.querySelector('.btn-text').textContent = 'Following';
+                  btn.querySelector('.btn-icon').textContent = '🔔';
+                } else {
+                  btn.classList.remove('subscribed');
+                  btn.classList.add('unsubscribed');
+                  btn.querySelector('.btn-text').textContent = 'Follow';
+                  btn.querySelector('.btn-icon').textContent = '🔕';
+                }
+              }
+              
+              if (countEl) {
+                countEl.textContent = subscription.subscriberCount || 0;
+              }
+            });
+          }
+        } catch (error) {
+          console.error('Error loading subscription states:', error);
+        }
+      }
+
+      // Add notification keyframes
+      const style = document.createElement('style');
+      style.textContent = `
+        @keyframes slideIn {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+          from { transform: translateX(0); opacity: 1; }
+          to { transform: translateX(100%); opacity: 0; }
+        }
+      `;
+      document.head.appendChild(style);
+
+      // Initialize
+      filterArtists();
+      loadSubscriptionStates();
+    </script>
+  </body>
+</html> 

@@ -21,10 +21,10 @@ export async function POST({ request }) {
     }
 
     const body = await request.json();
-    const { artist_ids } = body;
+    const { artistIds } = body;
 
     // Validate input
-    if (!Array.isArray(artist_ids) || artist_ids.length === 0) {
+    if (!Array.isArray(artistIds) || artistIds.length === 0) {
       return new Response(JSON.stringify({
         success: false,
         error: 'Artist IDs array is required'
@@ -35,7 +35,7 @@ export async function POST({ request }) {
     }
 
     // Validate that all items are numbers
-    if (!artist_ids.every(id => typeof id === 'number' && id > 0)) {
+    if (!artistIds.every(id => typeof id === 'number' && id > 0)) {
       return new Response(JSON.stringify({
         success: false,
         error: 'All artist IDs must be positive numbers'
@@ -48,52 +48,42 @@ export async function POST({ request }) {
     const client = await pool.connect();
     
     try {
-      // Get subscription status for all artists
-      const subscriptionQuery = `
-        WITH artist_counts AS (
-          SELECT 
-            artist_id,
-            COUNT(*) FILTER (WHERE is_subscribed = true) as subscriber_count
-          FROM artist_subscriptions 
-          WHERE artist_id = ANY($1)
-          GROUP BY artist_id
-        ),
-        user_subscriptions AS (
-          SELECT 
-            artist_id,
-            is_subscribed
-          FROM artist_subscriptions
-          WHERE user_id = $2 AND artist_id = ANY($1)
-        )
-        SELECT 
-          unnest($1::int[]) as artist_id,
-          COALESCE(us.is_subscribed, false) as is_subscribed,
-          COALESCE(ac.subscriber_count, 0) as subscriber_count
-        FROM (SELECT 1) dummy
-        LEFT JOIN user_subscriptions us ON us.artist_id = unnest($1::int[])
-        LEFT JOIN artist_counts ac ON ac.artist_id = unnest($1::int[])
+      // Get user's subscription status for these artists
+      const userSubscriptionsQuery = `
+        SELECT artist_id, is_subscribed
+        FROM artist_subscriptions
+        WHERE user_id = $1 AND artist_id = ANY($2)
       `;
+      const userSubscriptions = await client.query(userSubscriptionsQuery, [authResult.user.id, artistIds]);
 
-      const result = await client.query(subscriptionQuery, [artist_ids, authResult.user.id]);
+      // Get subscriber counts for these artists
+      const subscriberCountsQuery = `
+        SELECT 
+          artist_id,
+          COUNT(*) FILTER (WHERE is_subscribed = true) as subscriber_count
+        FROM artist_subscriptions 
+        WHERE artist_id = ANY($1)
+        GROUP BY artist_id
+      `;
+      const subscriberCounts = await client.query(subscriberCountsQuery, [artistIds]);
 
-      // Create a map for easy lookup
-      const subscriptionMap = new Map();
-      result.rows.forEach(row => {
-        subscriptionMap.set(row.artist_id, {
-          artist_id: row.artist_id,
-          is_subscribed: row.is_subscribed,
-          subscriber_count: parseInt(row.subscriber_count)
-        });
+      // Create maps for easy lookup
+      const userSubMap = new Map();
+      userSubscriptions.rows.forEach(row => {
+        userSubMap.set(row.artist_id, row.is_subscribed);
       });
 
-      // Ensure we have data for all requested artists
-      const subscriptions = artist_ids.map(artistId => {
-        return subscriptionMap.get(artistId) || {
-          artist_id: artistId,
-          is_subscribed: false,
-          subscriber_count: 0
-        };
+      const countMap = new Map();
+      subscriberCounts.rows.forEach(row => {
+        countMap.set(row.artist_id, parseInt(row.subscriber_count));
       });
+
+      // Build response for all requested artists
+      const subscriptions = artistIds.map(artistId => ({
+        artistId: artistId,
+        isSubscribed: userSubMap.get(artistId) || false,
+        subscriberCount: countMap.get(artistId) || 0
+      }));
 
       return new Response(JSON.stringify({
         success: true,
@@ -167,9 +157,9 @@ export async function GET({ url }) {
 
       return new Response(JSON.stringify({
         success: true,
-        artist_id: parseInt(artistId),
-        is_subscribed: row.is_subscribed,
-        subscriber_count: parseInt(row.subscriber_count)
+        artistId: parseInt(artistId),
+        isSubscribed: row.is_subscribed,
+        subscriberCount: parseInt(row.subscriber_count)
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' }

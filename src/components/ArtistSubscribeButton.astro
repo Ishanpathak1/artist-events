@@ -282,8 +282,8 @@ const {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          artist_id: artistId,
-          is_subscribed: newSubscriptionState
+          artistId: artistId,
+          action: newSubscriptionState ? 'subscribe' : 'unsubscribe'
         })
       });
       
@@ -305,8 +305,8 @@ const {
         }
         
         // Update subscriber count if available
-        if (countElement && result.subscriber_count !== undefined) {
-          countElement.textContent = result.subscriber_count;
+        if (countElement && result.subscriberCount !== undefined) {
+          countElement.textContent = result.subscriberCount;
         }
         
         // Success animation
@@ -432,28 +432,28 @@ const {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ artist_ids: artistIds })
+        body: JSON.stringify({ artistIds: artistIds })
       });
       
       const result = await response.json();
       
       if (result.success && result.subscriptions) {
         result.subscriptions.forEach(sub => {
-          const btn = document.getElementById(`subscribe-btn-${sub.artist_id}`);
-          const countElement = document.getElementById(`count-${sub.artist_id}`);
+          const btn = document.getElementById(`subscribe-btn-${sub.artistId}`);
+          const countElement = document.getElementById(`count-${sub.artistId}`);
           
           if (btn) {
-            if (sub.is_subscribed) {
+            if (sub.isSubscribed) {
               btn.classList.remove('unsubscribed');
               btn.classList.add('subscribed');
               btn.querySelector('.btn-icon').textContent = '🔔';
               btn.querySelector('.btn-text').textContent = 'Following';
             }
-            window.subscriptionState.set(sub.artist_id, sub.is_subscribed);
+            window.subscriptionState.set(sub.artistId, sub.isSubscribed);
           }
           
           if (countElement) {
-            countElement.textContent = sub.subscriber_count || 0;
+            countElement.textContent = sub.subscriberCount || 0;
           }
         });
       }

@@ -28,6 +28,8 @@ const pool = new Pool({
 // Check if user has a session cookie and validate it
 const cookies = Astro.request.headers.get('cookie');
 let currentUser = null;
+let allFollowers = [];
+let allFollowing = [];
 
 if (!cookies) {
     return new Response(null, {
@@ -577,6 +579,29 @@ try {
           font-size: 1.5rem;
         }
       }
+
+      .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+      }
+
+      .stat-card.clickable {
+        cursor: pointer;
+      }
+
+      .stat-card.clickable:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+        border-color: #3b82f6;
+      }
+
+      .stat-card.clickable .stat-icon {
+        transition: transform 0.3s ease;
+      }
+
+      .stat-card.clickable:hover .stat-icon {
+        transform: scale(1.1);
+      }
     </style>
   </head>
   <body>
@@ -615,38 +640,38 @@ try {
         <section class="stats-grid">
           <div class="stat-card events">
             <div class="stat-header">
-              <div class="stat-icon">🎪</div>
+              <div class="stat-icon">📅</div>
               <span class="stat-trend trend-up">+12%</span>
             </div>
             <div class="stat-value" id="eventsCount">0</div>
             <div class="stat-label">Events Created</div>
           </div>
 
-          <div class="stat-card views">
+          <div class="stat-card blogs">
             <div class="stat-header">
-              <div class="stat-icon">👀</div>
+              <div class="stat-icon">📝</div>
               <span class="stat-trend trend-up">+8%</span>
             </div>
-            <div class="stat-value" id="totalViews">0</div>
-            <div class="stat-label">Profile Views</div>
+            <div class="stat-value" id="blogsCount">0</div>
+            <div class="stat-label">Blog Posts</div>
           </div>
 
-          <div class="stat-card likes">
-            <div class="stat-header">
-              <div class="stat-icon">❤️</div>
-              <span class="stat-trend trend-up">+15%</span>
-            </div>
-            <div class="stat-value" id="totalLikes">0</div>
-            <div class="stat-label">Total Likes</div>
-          </div>
-
-          <div class="stat-card followers">
+          <div class="stat-card followers clickable" id="followersCard">
             <div class="stat-header">
               <div class="stat-icon">👥</div>
-              <span class="stat-trend trend-up">+5%</span>
+              <span class="stat-trend trend-up">+15%</span>
             </div>
             <div class="stat-value" id="followersCount">0</div>
             <div class="stat-label">Followers</div>
+          </div>
+
+          <div class="stat-card following clickable" id="followingCard">
+            <div class="stat-header">
+              <div class="stat-icon">🔔</div>
+              <span class="stat-trend trend-up">+5%</span>
+            </div>
+            <div class="stat-value" id="followingCount">0</div>
+            <div class="stat-label">Following</div>
           </div>
         </section>
 
@@ -833,6 +858,8 @@ try {
     <script>
       // Dashboard functionality
       let currentUser = null;
+      let allFollowers = [];
+      let allFollowing = [];
 
       // Check authentication and load dashboard
       async function initDashboard() {
@@ -867,19 +894,35 @@ try {
           document.getElementById('profileAvatar').textContent = 
             currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase();
 
-          // Load stats
+          // Load stats from our API
           const statsResponse = await fetch('/api/dashboard/stats');
           if (statsResponse.ok) {
-            const stats = await statsResponse.json();
-            
-            document.getElementById('eventsCount').textContent = stats.events_created || 0;
-            document.getElementById('totalViews').textContent = formatNumber(stats.total_views || 0);
-            document.getElementById('totalLikes').textContent = stats.total_likes || 0;
-            document.getElementById('followersCount').textContent = stats.followers_count || 0;
+            const data = await statsResponse.json();
+            if (data.success) {
+              const stats = data.stats;
+              
+              document.getElementById('eventsCount').textContent = stats.events?.total_events || 0;
+              document.getElementById('blogsCount').textContent = stats.blogs?.total_posts || 0;
+              document.getElementById('followersCount').textContent = stats.followers || 0;
+              document.getElementById('followingCount').textContent = stats.followingCount || 0;
+
+              // Store data for modals
+              allFollowers = data.allFollowers || [];
+              allFollowing = data.allFollowing || [];
+            }
           }
 
           // Load profile data
           loadProfileData();
+
+          // Add click event listeners for followers/following cards
+          document.getElementById('followersCard').addEventListener('click', () => {
+            showFollowersList();
+          });
+
+          document.getElementById('followingCard').addEventListener('click', () => {
+            showFollowingList();
+          });
 
           // Show dashboard
           document.getElementById('loadingState').classList.remove('show');
@@ -973,6 +1016,177 @@ try {
           alert('Failed to update social links. Please try again.');
         }
       });
+
+      // Show followers list in modal
+      function showFollowersList() {
+        const modal = createListModal('Your Followers', allFollowers, 'followers');
+        document.body.appendChild(modal);
+      }
+
+      // Show following list in modal
+      function showFollowingList() {
+        const modal = createListModal('People You Follow', allFollowing, 'following');
+        document.body.appendChild(modal);
+      }
+
+      // Create a simple modal with list of people
+      function createListModal(title, people, type) {
+        const modal = document.createElement('div');
+        modal.className = 'simple-modal';
+        modal.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+        `;
+
+        const content = document.createElement('div');
+        content.style.cssText = `
+          background: white;
+          border-radius: 12px;
+          max-width: 500px;
+          width: 90%;
+          max-height: 70vh;
+          overflow-y: auto;
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+        `;
+
+        const header = document.createElement('div');
+        header.style.cssText = `
+          padding: 20px;
+          border-bottom: 1px solid #eee;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        `;
+
+        const titleEl = document.createElement('h2');
+        titleEl.textContent = title;
+        titleEl.style.cssText = `
+          margin: 0;
+          color: #333;
+          font-size: 1.5rem;
+          flex: 1;
+        `;
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '×';
+        closeBtn.style.cssText = `
+          background: none;
+          border: none;
+          font-size: 24px;
+          cursor: pointer;
+          color: #666;
+          padding: 0;
+          margin-left: 20px;
+        `;
+
+        header.appendChild(titleEl);
+        header.appendChild(closeBtn);
+
+        const listContainer = document.createElement('div');
+        listContainer.style.cssText = `
+          padding: 20px;
+        `;
+
+        if (people.length === 0) {
+          const emptyMessage = document.createElement('p');
+          emptyMessage.textContent = type === 'followers' ? 
+            'You don\'t have any followers yet.' : 
+            'You\'re not following anyone yet.';
+          emptyMessage.style.cssText = `
+            text-align: center;
+            color: #666;
+            font-style: italic;
+            margin: 40px 0;
+          `;
+          listContainer.appendChild(emptyMessage);
+        } else {
+          people.forEach(person => {
+            const personDiv = document.createElement('div');
+            personDiv.style.cssText = `
+              display: flex;
+              align-items: center;
+              padding: 12px 0;
+              border-bottom: 1px solid #f0f0f0;
+            `;
+
+            const avatar = document.createElement('div');
+            avatar.style.cssText = `
+              width: 40px;
+              height: 40px;
+              border-radius: 50%;
+              background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: white;
+              font-weight: bold;
+              margin-right: 12px;
+              font-size: 14px;
+            `;
+            
+            const initials = (person.name || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+            avatar.textContent = initials;
+
+            const nameDiv = document.createElement('div');
+            nameDiv.style.cssText = `
+              flex: 1;
+            `;
+
+            const nameSpan = document.createElement('div');
+            nameSpan.textContent = person.stage_name || person.name || 'Unknown User';
+            nameSpan.style.cssText = `
+              font-weight: 500;
+              color: #333;
+              margin-bottom: 2px;
+            `;
+
+            const dateSpan = document.createElement('div');
+            const followedDate = person.subscribed_at || person.followed_at;
+            if (followedDate) {
+              const date = new Date(followedDate);
+              dateSpan.textContent = `Followed ${date.toLocaleDateString()}`;
+            } else {
+              dateSpan.textContent = 'Follow date unknown';
+            }
+            dateSpan.style.cssText = `
+              font-size: 12px;
+              color: #666;
+            `;
+
+            nameDiv.appendChild(nameSpan);
+            nameDiv.appendChild(dateSpan);
+
+            personDiv.appendChild(avatar);
+            personDiv.appendChild(nameDiv);
+            listContainer.appendChild(personDiv);
+          });
+        }
+
+        content.appendChild(header);
+        content.appendChild(listContainer);
+        modal.appendChild(content);
+
+        // Close modal events
+        closeBtn.addEventListener('click', () => {
+          document.body.removeChild(modal);
+        });
+
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) {
+            document.body.removeChild(modal);
+          }
+        });
+
+        return modal;
+      }
 
       // Initialize dashboard on page load
       document.addEventListener('DOMContentLoaded', initDashboard);

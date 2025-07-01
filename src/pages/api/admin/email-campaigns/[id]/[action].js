@@ -1,6 +1,39 @@
 import { Pool } from 'pg';
-import { authenticateUser } from '../../../../../../lib/auth-middleware.js';
 import { Resend } from 'resend';
+
+// Use inline authentication instead of importing the problematic module
+async function authenticateUser(request) {
+  try {
+    const cookies = request.headers.get('cookie');
+    if (!cookies) return { user: null, authenticated: false };
+    
+    const sessionToken = parseCookie(cookies, 'session_token');
+    if (!sessionToken) return { user: null, authenticated: false };
+    
+    const result = await pool.query(`
+      SELECT u.id, u.email, u.name, u.user_type, u.active, u.role
+      FROM users u
+      JOIN user_sessions s ON u.id = s.user_id
+      WHERE s.session_token = $1 AND s.expires_at > CURRENT_TIMESTAMP
+    `, [sessionToken]);
+    
+    return result.rows.length > 0 
+      ? { user: result.rows[0], authenticated: true }
+      : { user: null, authenticated: false };
+  } catch (error) {
+    console.error('Auth error:', error);
+    return { user: null, authenticated: false };
+  }
+}
+
+function parseCookie(cookieString, name) {
+  const cookies = cookieString.split(';').map(cookie => cookie.trim());
+  for (const cookie of cookies) {
+    const [cookieName, cookieValue] = cookie.split('=');
+    if (cookieName === name) return decodeURIComponent(cookieValue);
+  }
+  return null;
+}
 
 // Database connection
 const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 

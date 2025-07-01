@@ -2,6 +2,7 @@
 import { defineConfig } from 'astro/config';
 import vercel from '@astrojs/vercel';
 import tailwind from '@astrojs/tailwind';
+import react from '@astrojs/react';
 import { loadEnv } from 'vite';
 
 // Load environment variables
@@ -15,7 +16,7 @@ export default defineConfig({
       enabled: true
     }
   }),
-  integrations: [tailwind()],
+  integrations: [tailwind(), react()],
   vite: {
     define: {
       'process.env.NEON_DATABASE_URL': JSON.stringify(env.NEON_DATABASE_URL),

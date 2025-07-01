@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { authenticateUser } from '../../../lib/auth-middleware.js';
+import { authenticateUser } from '../../../../lib/auth-middleware.js';
 
 const pool = new Pool({
   connectionString: process.env.NEON_DATABASE_URL,
