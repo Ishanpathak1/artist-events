@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { authenticateUser } from '../../../../../../lib/auth-middleware.js';
-import { EmailService } from '../../../../../lib/email-service.js';
+import { Resend } from 'resend';
 
 // Database connection
 const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
@@ -180,29 +180,81 @@ async function sendCampaign(client, campaign, adminId) {
   }
 
   try {
-    // Use EmailService to send the campaign
-    const emailService = new EmailService();
-    const result = await emailService.sendCampaign(campaign.id);
-
-    if (result.success) {
-      // Update campaign status
-      await client.query(`
-        UPDATE email_campaigns 
-        SET status = 'sent', sent_at = NOW(), emails_sent = $1
-        WHERE id = $2
-      `, [result.totalSent, campaign.id]);
-
-      return new Response(JSON.stringify({ 
-        success: true, 
-        message: 'Campaign sent successfully',
-        totalRecipients: result.totalRecipients,
-        emailsSent: result.totalSent
-      }), {
+    // Initialize Resend
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    
+    // Get campaign recipients (simplified version)
+    const recipientsResult = await client.query(`
+      SELECT DISTINCT u.id, u.email, u.first_name, u.last_name
+      FROM users u
+      JOIN email_subscriptions es ON u.id = es.user_id
+      WHERE es.is_subscribed = true 
+        AND u.email IS NOT NULL 
+        AND u.email != ''
+    `);
+    
+    const recipients = recipientsResult.rows;
+    
+    if (recipients.length === 0) {
+      return new Response(JSON.stringify({ error: 'No recipients found' }), {
+        status: 400,
         headers: { 'Content-Type': 'application/json' }
       });
-    } else {
-      throw new Error(result.error || 'Failed to send campaign');
     }
+
+    // Send emails in batches
+    let emailsSent = 0;
+    const batchSize = 10;
+
+    for (let i = 0; i < recipients.length; i += batchSize) {
+      const batch = recipients.slice(i, i + batchSize);
+      
+      const emailPromises = batch.map(async (recipient) => {
+        try {
+          await resend.emails.send({
+            from: `Artist Events <${process.env.FROM_EMAIL || 'onboarding@resend.dev'}>`,
+            to: recipient.email,
+            subject: campaign.subject,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2>${campaign.subject}</h2>
+                <p>Hi ${recipient.first_name || 'there'},</p>
+                <div>${campaign.content?.replace(/\n/g, '<br>') || ''}</div>
+                <hr>
+                <p style="font-size: 12px; color: #666;">
+                  <a href="${process.env.SITE_URL || 'http://localhost:4321'}/api/email/unsubscribe?email=${recipient.email}">Unsubscribe</a>
+                </p>
+              </div>
+            `,
+            tags: [
+              { name: 'campaignId', value: campaign.id.toString() },
+              { name: 'userId', value: recipient.id.toString() }
+            ]
+          });
+          emailsSent++;
+        } catch (error) {
+          console.error(`Failed to send email to ${recipient.email}:`, error);
+        }
+      });
+      
+      await Promise.all(emailPromises);
+    }
+
+    // Update campaign status
+    await client.query(`
+      UPDATE email_campaigns 
+      SET status = 'sent', sent_at = NOW(), emails_sent = $1
+      WHERE id = $2
+    `, [emailsSent, campaign.id]);
+
+    return new Response(JSON.stringify({ 
+      success: true, 
+      message: 'Campaign sent successfully',
+      totalRecipients: recipients.length,
+      emailsSent: emailsSent
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
 
   } catch (error) {
     console.error('Error sending campaign:', error);
