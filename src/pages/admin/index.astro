@@ -141,6 +141,8 @@ const stats = await getDashboardStats();
         <a href="/admin/users" class="admin-nav-link">👥 Users</a>
         <a href="/admin/events" class="admin-nav-link">🎪 Events</a>
         <a href="/admin/blogs" class="admin-nav-link">📝 Blogs</a>
+        <a href="/admin/email-campaigns" class="admin-nav-link">📧 Email Campaigns</a>
+        <a href="/admin/broadcast" class="admin-nav-link">📢 Broadcast</a>
         {currentUser?.email === 'ishan.pathak2711@gmail.com' && currentUser?.is_super_admin && (
           <a href="/admin/admins" class="admin-nav-link">⚙️ Admins</a>
         )}
@@ -272,6 +274,18 @@ const stats = await getDashboardStats();
             <p>Review pending events</p>
           </a>
           
+          <a href="/admin/broadcast" class="action-card">
+            <div class="action-icon">📢</div>
+            <h3>Send Broadcast</h3>
+            <p>Send instant messages to all users</p>
+          </a>
+          
+          <a href="/admin/email-campaigns" class="action-card">
+            <div class="action-icon">📧</div>
+            <h3>Email Campaigns</h3>
+            <p>Manage and review email campaigns</p>
+          </a>
+          
           <a href="/admin/users?action=ban" class="action-card">
             <div class="action-icon">🚫</div>
             <h3>User Management</h3>
@@ -297,6 +311,18 @@ const stats = await getDashboardStats();
           <div class="quick-action-icon">🎪</div>
           <h3>Manage Events</h3>
           <p>Review and moderate events</p>
+        </a>
+        
+        <a href="/admin/broadcast" class="quick-action-card">
+          <div class="quick-action-icon">📢</div>
+          <h3>Send Broadcast</h3>
+          <p>Send instant messages to all subscribers</p>
+        </a>
+        
+        <a href="/admin/email-campaigns" class="quick-action-card">
+          <div class="quick-action-icon">📧</div>
+          <h3>Email Campaigns</h3>
+          <p>Review and manage email campaigns</p>
         </a>
         
         {currentUser?.email === 'ishan.pathak2711@gmail.com' && currentUser?.is_super_admin && (

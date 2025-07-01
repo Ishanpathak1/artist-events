@@ -22,8 +22,19 @@ let isAdmin = false;
 if (cookies) {
   const sessionToken = parseCookie(cookies, 'session_token');
   if (sessionToken) {
+    // 🔍 DEBUGGING AUTH DATABASE CONNECTION
+    console.log('\n=== 🔑 ADMIN AUTH - DATABASE CONNECTION DEBUG ===');
+    console.log('🌍 Auth Environment Variables:');
+    console.log('  NEON_DATABASE_URL present:', !!process.env.NEON_DATABASE_URL);
+    console.log('  DATABASE_URL present:', !!process.env.DATABASE_URL);
+    
     const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
       'postgresql://ishanpathak@localhost:5432/artist_events';
+    
+    console.log('📍 Auth Connection String (first 60 chars):', connectionString.substring(0, 60) + '...');
+    console.log('🔗 Auth Connection Type:', connectionString.includes('neon.tech') ? 'NEON (Production)' : 'LOCAL (Development)');
+    console.log('🎫 Session Token (first 10 chars):', sessionToken.substring(0, 10) + '...');
+    console.log('===============================================\n');
     
     const pool = new Pool({
       connectionString,
@@ -37,11 +48,18 @@ if (cookies) {
         [sessionToken]
       );
       
+      console.log('🔑 Session Query Results:');
+      console.log('   Sessions Found:', sessionResult.rows.length);
       if (sessionResult.rows.length > 0) {
+        console.log('   User Email:', sessionResult.rows[0].email);
+        console.log('   User Type:', sessionResult.rows[0].user_type);
         currentUser = sessionResult.rows[0];
         isAdmin = currentUser.email === 'ishan.pathak2711@gmail.com' || 
                  currentUser.user_type === 'admin' || 
                  currentUser.is_super_admin === true;
+        console.log('   Is Admin:', isAdmin);
+      } else {
+        console.log('   No valid session found for this token');
       }
       client.release();
     } catch (error) {
@@ -59,8 +77,26 @@ if (!isAdmin) {
 
 // Get all users with pagination
 async function getUsers() {
+  // 🔍 DEBUGGING DATABASE CONNECTION
+  console.log('\n=== 🔍 ADMIN USERS PAGE - DATABASE CONNECTION DEBUG ===');
+  console.log('🌍 Environment Variables:');
+  console.log('  NODE_ENV:', process.env.NODE_ENV);
+  console.log('  NEON_DATABASE_URL present:', !!process.env.NEON_DATABASE_URL);
+  console.log('  DATABASE_URL present:', !!process.env.DATABASE_URL);
+  
+  if (process.env.NEON_DATABASE_URL) {
+    console.log('  NEON_DATABASE_URL (first 50 chars):', process.env.NEON_DATABASE_URL.substring(0, 50) + '...');
+  }
+  if (process.env.DATABASE_URL) {
+    console.log('  DATABASE_URL (first 50 chars):', process.env.DATABASE_URL.substring(0, 50) + '...');
+  }
+  
   const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
     'postgresql://ishanpathak@localhost:5432/artist_events';
+  
+  console.log('📍 Selected Connection String (first 60 chars):', connectionString.substring(0, 60) + '...');
+  console.log('🔗 Connection Type:', connectionString.includes('neon.tech') ? 'NEON (Production)' : 'LOCAL (Development)');
+  console.log('===============================================\n');
   
   const pool = new Pool({
     connectionString,
@@ -69,6 +105,13 @@ async function getUsers() {
 
   const client = await pool.connect();
   try {
+    // Test query to verify database connection
+    const testResult = await client.query('SELECT current_database(), current_user, version()');
+    console.log('🗄️  Database Info:');
+    console.log('   Database Name:', testResult.rows[0].current_database);
+    console.log('   Connected User:', testResult.rows[0].current_user);
+    console.log('   PostgreSQL Version:', testResult.rows[0].version.split(' ')[0] + ' ' + testResult.rows[0].version.split(' ')[1]);
+    
     // Get users with their events count and latest activity
     const usersResult = await client.query(`
       SELECT 
@@ -82,6 +125,11 @@ async function getUsers() {
       GROUP BY u.id
       ORDER BY u.created_at DESC
     `);
+    
+    console.log('👥 Users Query Results:');
+    console.log('   Total Users Found:', usersResult.rows.length);
+    console.log('   First 3 User Emails:', usersResult.rows.slice(0, 3).map(u => u.email));
+    console.log('   Admin Users:', usersResult.rows.filter(u => u.user_type === 'admin' || u.email.includes('admin')).map(u => u.email));
 
     return usersResult.rows;
   } finally {
@@ -115,7 +163,11 @@ const users = await getUsers();
         <a href="/admin/users" class="admin-nav-link active">👥 Users</a>
         <a href="/admin/events" class="admin-nav-link">🎪 Events</a>
         <a href="/admin/blogs" class="admin-nav-link">📝 Blogs</a>
-        <a href="/admin/settings" class="admin-nav-link">⚙️ Settings</a>
+        <a href="/admin/email-campaigns" class="admin-nav-link">📧 Email Campaigns</a>
+        <a href="/admin/broadcast" class="admin-nav-link">📢 Broadcast</a>
+        {currentUser?.email === 'ishan.pathak2711@gmail.com' && currentUser?.is_super_admin && (
+          <a href="/admin/admins" class="admin-nav-link">⚙️ Admins</a>
+        )}
       </div>
     </nav>
 

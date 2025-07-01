@@ -1,0 +1,1094 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { Pool } from 'pg';
+
+// Helper function to parse cookies
+function parseCookie(cookieString, name) {
+  const cookies = cookieString.split(';').map(cookie => cookie.trim());
+  for (const cookie of cookies) {
+    const [cookieName, cookieValue] = cookie.split('=');
+    if (cookieName === name) {
+      return decodeURIComponent(cookieValue);
+    }
+  }
+  return null;
+}
+
+// Database connection
+const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
+  'postgresql://ishanpathak@localhost:5432/artist_events';
+
+// Admin authentication check
+const cookies = Astro.request.headers.get('cookie');
+let currentUser = null;
+let isAdmin = false;
+
+if (cookies) {
+  const sessionToken = parseCookie(cookies, 'session_token');
+  if (sessionToken) {
+    const pool = new Pool({
+      connectionString,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    });
+
+    try {
+      const client = await pool.connect();
+      const sessionResult = await client.query(
+        'SELECT u.* FROM users u JOIN user_sessions s ON u.id = s.user_id WHERE s.session_token = $1 AND s.expires_at > NOW()',
+        [sessionToken]
+      );
+      
+      if (sessionResult.rows.length > 0) {
+        currentUser = sessionResult.rows[0];
+        isAdmin = currentUser.user_type === 'admin' || currentUser.role === 'admin';
+      }
+      client.release();
+    } catch (error) {
+      console.error('Admin auth error:', error);
+    }
+  }
+}
+
+// Redirect if not admin
+if (!isAdmin) {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: '/?error=unauthorized' }
+  });
+}
+
+// Get subscriber count
+async function getSubscriberCount() {
+  const pool = new Pool({
+    connectionString,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  });
+  
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT COUNT(*) as count 
+      FROM email_subscriptions 
+      WHERE is_subscribed = true
+    `);
+    return parseInt(result.rows[0].count);
+  } catch (error) {
+    console.error('Error getting subscriber count:', error);
+    return 0;
+  } finally {
+    client.release();
+  }
+}
+
+// Get user count
+async function getUserCount() {
+  const pool = new Pool({
+    connectionString,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  });
+  
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT COUNT(*) as count FROM users
+    `);
+    return parseInt(result.rows[0].count);
+  } catch (error) {
+    console.error('Error getting user count:', error);
+    return 0;
+  } finally {
+    client.release();
+  }
+}
+
+const subscriberCount = await getSubscriberCount();
+const userCount = await getUserCount();
+---
+
+<Layout title="Email Broadcast - Admin Dashboard">
+  <div class="admin-dashboard">
+    <!-- Admin Header -->
+    <header class="admin-header">
+      <div class="admin-header-content">
+        <div class="admin-brand">
+          <h1>📢 Email Broadcast</h1>
+          <p>Send important announcements and updates to your entire community</p>
+        </div>
+        <div class="admin-actions">
+          <a href="/admin" class="btn btn-secondary">← Back to Dashboard</a>
+          <button id="logoutBtn" class="btn btn-danger">Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Admin Navigation -->
+    <nav class="admin-nav">
+      <div class="admin-nav-content">
+        <a href="/admin" class="admin-nav-link">📊 Overview</a>
+        <a href="/admin/users" class="admin-nav-link">👥 Users</a>
+        <a href="/admin/events" class="admin-nav-link">🎪 Events</a>
+        <a href="/admin/blogs" class="admin-nav-link">📝 Blogs</a>
+        <a href="/admin/email-campaigns" class="admin-nav-link">📧 Email Campaigns</a>
+        <a href="/admin/broadcast" class="admin-nav-link active">📢 Broadcast</a>
+        {currentUser?.email === 'ishan.pathak2711@gmail.com' && currentUser?.is_super_admin && (
+          <a href="/admin/admins" class="admin-nav-link">⚙️ Admins</a>
+        )}
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="admin-main">
+      <!-- Header Stats -->
+      <section class="stats-section">
+        <h2>Broadcast Overview</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon">📧</div>
+            <div class="stat-content">
+              <h3>{subscriberCount}</h3>
+              <p>Email Subscribers</p>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">👥</div>
+            <div class="stat-content">
+              <h3>{userCount}</h3>
+              <p>Total Users</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Broadcast Form Container -->
+      <section class="broadcast-section">
+        <div class="broadcast-container">
+          <!-- Form Column -->
+          <div class="broadcast-form-container">
+            <form id="broadcastForm" class="broadcast-form">
+              <!-- Email Type -->
+              <div class="form-group">
+                <label class="form-label">Broadcast Type</label>
+                <select id="broadcastType" name="broadcast_type" class="form-control" required>
+                  <option value="">Select broadcast type...</option>
+                  <option value="announcement">📢 Platform Announcement</option>
+                  <option value="maintenance">🔧 Maintenance Notice</option>
+                  <option value="feature">✨ New Feature</option>
+                  <option value="event">🎵 Featured Events</option>
+                  <option value="newsletter">📰 Newsletter</option>
+                  <option value="emergency">🚨 Emergency Notice</option>
+                  <option value="custom">📝 Custom Message</option>
+                </select>
+              </div>
+
+              <!-- Subject -->
+              <div class="form-group">
+                <label class="form-label">Email Subject</label>
+                <input 
+                  type="text" 
+                  id="emailSubject" 
+                  name="subject" 
+                  class="form-control" 
+                  placeholder="Enter email subject..."
+                  required
+                />
+                <div class="form-hint">Keep it clear and engaging (50-60 characters recommended)</div>
+              </div>
+
+              <!-- Recipients -->
+              <div class="form-group">
+                <label class="form-label">Recipients</label>
+                <select id="recipients" name="recipients" class="form-control" required>
+                  <option value="subscribers">📧 Email Subscribers Only ({subscriberCount} users)</option>
+                  <option value="all">👥 All Users ({userCount} users)</option>
+                  <option value="artists">🎤 Artists Only</option>
+                  <option value="active">⚡ Active Users (last 30 days)</option>
+                  <option value="single">👤 Single User (for testing or personal messages)</option>
+                </select>
+              </div>
+
+              <!-- Single User Email Input (Hidden by default) -->
+              <div class="form-group" id="singleUserGroup" style="display: none;">
+                <label class="form-label">Recipient Email Address</label>
+                <input 
+                  type="email" 
+                  id="singleUserEmail" 
+                  name="single_user_email" 
+                  class="form-control" 
+                  placeholder="Enter the email address of the specific user..."
+                />
+                <div class="form-hint">
+                  💡 Perfect for testing emails or sending personalized admin messages
+                </div>
+              </div>
+
+              <!-- Message Content -->
+              <div class="form-group">
+                <label class="form-label">Message Content</label>
+                <div class="editor-toolbar">
+                  <button type="button" class="toolbar-btn" onclick="formatText('bold')">
+                    <strong>B</strong>
+                  </button>
+                  <button type="button" class="toolbar-btn" onclick="formatText('italic')">
+                    <em>I</em>
+                  </button>
+                  <button type="button" class="toolbar-btn" onclick="insertLink()">
+                    🔗
+                  </button>
+                  <button type="button" class="toolbar-btn" onclick="insertEmoji()">
+                    😊
+                  </button>
+                </div>
+                <textarea 
+                  id="messageContent" 
+                  name="content" 
+                  class="form-control message-textarea" 
+                  placeholder="Write your message here... You can use HTML or plain text."
+                  rows="8"
+                  required
+                ></textarea>
+                <div class="form-hint">
+                  Support for HTML tags: &lt;b&gt;, &lt;i&gt;, &lt;a&gt;, &lt;br&gt;, &lt;p&gt;, &lt;ul&gt;, &lt;li&gt;
+                </div>
+              </div>
+
+              <!-- Call to Action (Optional) -->
+              <div class="form-group">
+                <label class="form-label">Call to Action (Optional)</label>
+                <div class="cta-inputs">
+                  <input 
+                    type="text" 
+                    id="ctaText" 
+                    name="cta_text" 
+                    class="form-control" 
+                    placeholder="Button text (e.g., 'View Events', 'Learn More')"
+                  />
+                  <input 
+                    type="url" 
+                    id="ctaUrl" 
+                    name="cta_url" 
+                    class="form-control" 
+                    placeholder="Button URL (e.g., https://yoursite.com/events)"
+                  />
+                </div>
+              </div>
+
+              <!-- Form Actions -->
+              <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="resetForm()">
+                  🗑️ Clear Form
+                </button>
+                <button type="button" class="btn btn-primary" onclick="updatePreview()">
+                  👁️ Update Preview
+                </button>
+                <button type="submit" class="btn btn-success" id="sendBtn">
+                  📧 Send Broadcast
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Preview Column -->
+          <div class="email-preview-container">
+            <h3>📧 Email Preview</h3>
+            <div class="email-preview" id="emailPreview">
+              <div class="preview-placeholder">
+                Fill in the form to see a preview of your email
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent Broadcasts -->
+          <div class="recent-broadcasts">
+            <h3>📋 Recent Broadcasts</h3>
+            <div class="broadcasts-list" id="broadcastsList">
+              <div class="loading-placeholder">Loading recent broadcasts...</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <style>
+    .admin-dashboard {
+      min-height: 100vh;
+      background: #f8fafc;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    /* Admin Header */
+    .admin-header {
+      background: white;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 1rem 0;
+    }
+
+    .admin-header-content {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .admin-brand h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 0.25rem;
+    }
+
+    .admin-brand p {
+      color: #64748b;
+      margin: 0;
+    }
+
+    .admin-actions {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    /* Admin Navigation */
+    .admin-nav {
+      background: white;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 0;
+    }
+
+    .admin-nav-content {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      display: flex;
+      gap: 2rem;
+    }
+
+    .admin-nav-link {
+      display: flex;
+      align-items: center;
+      padding: 1rem 0;
+      text-decoration: none;
+      color: #64748b;
+      font-weight: 500;
+      border-bottom: 3px solid transparent;
+      transition: all 0.3s ease;
+    }
+
+    .admin-nav-link:hover,
+    .admin-nav-link.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+    }
+
+    /* Main Content */
+    .admin-main {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* Stats Section */
+    .stats-section {
+      margin-bottom: 2rem;
+    }
+
+    .stats-section h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #1e293b;
+      margin-bottom: 1rem;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      border: 1px solid #e2e8f0;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .stat-icon {
+      font-size: 2.5rem;
+      opacity: 0.8;
+    }
+
+    .stat-content h3 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #1e293b;
+      margin: 0 0 0.25rem 0;
+    }
+
+    .stat-content p {
+      color: #64748b;
+      margin: 0;
+      font-weight: 500;
+    }
+
+    /* Broadcast Section */
+    .broadcast-section {
+      background: white;
+      border-radius: 12px;
+      padding: 2rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      margin-bottom: 2rem;
+    }
+
+    .broadcast-container {
+      max-width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 400px;
+      gap: 2rem;
+    }
+
+    /* Form Styling */
+    .broadcast-form-container {
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 1.5rem;
+      border: 1px solid #e2e8f0;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+      display: block;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 0.5rem;
+      font-size: 0.95rem;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 0.75rem;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      transition: all 0.3s ease;
+      background: white;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .form-hint {
+      font-size: 0.85rem;
+      color: #6b7280;
+      margin-top: 0.5rem;
+    }
+
+    /* Single User Input Styling */
+    #singleUserGroup {
+      border: 2px dashed #e2e8f0;
+      border-radius: 8px;
+      padding: 1rem;
+      background: #f8fafc;
+      transition: all 0.3s ease;
+    }
+
+    #singleUserGroup:has(input:focus) {
+      border-color: #667eea;
+      background: #f1f5f9;
+    }
+
+    #singleUserGroup .form-hint {
+      background: white;
+      border-radius: 6px;
+      padding: 0.5rem;
+      border: 1px solid #e2e8f0;
+      margin-top: 0.75rem;
+    }
+
+    .message-textarea {
+      min-height: 200px;
+      resize: vertical;
+      font-family: 'Inter', sans-serif;
+      line-height: 1.6;
+    }
+
+    /* Editor Toolbar */
+    .editor-toolbar {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+      padding: 0.75rem;
+      background: white;
+      border-radius: 8px;
+      border: 2px solid #e2e8f0;
+    }
+
+    .toolbar-btn {
+      padding: 0.5rem 0.75rem;
+      border: 1px solid #d1d5db;
+      background: white;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: all 0.2s ease;
+    }
+
+    .toolbar-btn:hover {
+      background: #667eea;
+      color: white;
+      border-color: #667eea;
+    }
+
+    /* Email Preview */
+    .email-preview-container {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      border: 1px solid #e2e8f0;
+      height: fit-content;
+      position: sticky;
+      top: 2rem;
+    }
+
+    .email-preview-container h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #1e293b;
+      margin: 0 0 1rem 0;
+    }
+
+    .email-preview {
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 1.5rem;
+      background: #f9fafb;
+      min-height: 300px;
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .preview-placeholder {
+      color: #6b7280;
+      text-align: center;
+      padding: 2rem;
+      font-style: italic;
+    }
+
+    /* Form Actions */
+    .form-actions {
+      display: flex;
+      gap: 1rem;
+      justify-content: flex-end;
+      padding-top: 1.5rem;
+      border-top: 1px solid #e5e7eb;
+      margin-top: 2rem;
+    }
+
+    .cta-inputs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.95rem;
+      transition: all 0.3s ease;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-secondary {
+      background: #f1f5f9;
+      color: #64748b;
+      border: 2px solid #e2e8f0;
+    }
+
+    .btn-secondary:hover {
+      background: #e2e8f0;
+      border-color: #cbd5e1;
+    }
+
+    .btn-primary {
+      background: #667eea;
+      color: white;
+      border: 2px solid #667eea;
+    }
+
+    .btn-primary:hover {
+      background: #5a67d8;
+      border-color: #5a67d8;
+      transform: translateY(-1px);
+    }
+
+    .btn-success {
+      background: #059669;
+      color: white;
+      border: 2px solid #059669;
+    }
+
+    .btn-success:hover {
+      background: #047857;
+      border-color: #047857;
+      transform: translateY(-1px);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    .btn-danger {
+      background: #dc2626;
+      color: white;
+      border: 2px solid #dc2626;
+    }
+
+    .btn-danger:hover {
+      background: #b91c1c;
+      border-color: #b91c1c;
+    }
+
+    /* Recent Broadcasts */
+    .recent-broadcasts {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      border: 1px solid #e2e8f0;
+      margin-top: 2rem;
+      grid-column: 1 / -1;
+    }
+
+    .recent-broadcasts h3 {
+      margin: 0 0 1.5rem 0;
+      color: #1e293b;
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+
+    .loading-placeholder {
+      text-align: center;
+      color: #6b7280;
+      padding: 2rem;
+      font-style: italic;
+    }
+
+    .broadcast-item {
+      padding: 1rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      background: #f9fafb;
+      transition: all 0.2s ease;
+    }
+
+    .broadcast-item:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+
+    .broadcast-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      margin-bottom: 0.5rem;
+    }
+
+    .broadcast-subject {
+      font-weight: 600;
+      color: #1e293b;
+    }
+
+    .broadcast-date {
+      font-size: 0.85rem;
+      color: #6b7280;
+    }
+
+    .broadcast-meta {
+      font-size: 0.85rem;
+      color: #6b7280;
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .broadcast-container {
+        grid-template-columns: 1fr;
+      }
+
+      .email-preview-container {
+        position: static;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      }
+    }
+
+    @media (max-width: 768px) {
+      .admin-main {
+        padding: 1rem;
+      }
+
+      .cta-inputs {
+        grid-template-columns: 1fr;
+      }
+
+      .form-actions {
+        flex-direction: column;
+      }
+
+      .stats-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .stat-card {
+        text-align: center;
+        flex-direction: column;
+      }
+    }
+  </style>
+
+  <script>
+    // Wait for DOM to be fully loaded
+    document.addEventListener('DOMContentLoaded', function() {
+      // Form handling
+      const form = document.getElementById('broadcastForm');
+      const previewDiv = document.getElementById('emailPreview');
+      const sendBtn = document.getElementById('sendBtn');
+      const recipientsSelect = document.getElementById('recipients');
+
+      // Toggle single user email input
+      function toggleSingleUserInput() {
+        const singleUserGroup = document.getElementById('singleUserGroup');
+        const singleUserEmail = document.getElementById('singleUserEmail');
+        
+        console.log('Recipients value:', recipientsSelect.value); // Debug log
+        
+        if (recipientsSelect.value === 'single') {
+          singleUserGroup.style.display = 'block';
+          singleUserEmail.required = true;
+          console.log('Showing single user input'); // Debug log
+        } else {
+          singleUserGroup.style.display = 'none';
+          singleUserEmail.required = false;
+          singleUserEmail.value = '';
+          console.log('Hiding single user input'); // Debug log
+        }
+      }
+
+      // Set up event listener for recipients dropdown
+      recipientsSelect.addEventListener('change', toggleSingleUserInput);
+
+    // Update preview
+    function updatePreview() {
+      const type = document.getElementById('broadcastType').value;
+      const subject = document.getElementById('emailSubject').value;
+      const content = document.getElementById('messageContent').value;
+      const ctaText = document.getElementById('ctaText').value;
+      const ctaUrl = document.getElementById('ctaUrl').value;
+      const recipients = document.getElementById('recipients').value;
+      const singleUserEmail = document.getElementById('singleUserEmail').value;
+
+      if (!subject || !content) {
+        previewDiv.innerHTML = '<div class="preview-placeholder">Please fill in subject and content to see preview</div>';
+        return;
+      }
+
+      // Check if single user option is selected but no email provided
+      if (recipients === 'single' && !singleUserEmail) {
+        previewDiv.innerHTML = '<div class="preview-placeholder">Please enter a recipient email address for single user delivery</div>';
+        return;
+      }
+
+      // Get recipient info for preview
+      let recipientInfo = '';
+      if (recipients === 'single' && singleUserEmail) {
+        recipientInfo = `<p style="margin: 8px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 13px; color: #9ca3af; font-weight: 500;">📧 Sending to: ${singleUserEmail}</p>`;
+      }
+      
+      // Professional email template
+      const contentParagraphs = content.split('\n').map(paragraph => 
+        paragraph.trim() ? `<p style="margin: 0 0 16px 0;">${paragraph.trim()}</p>` : ''
+      ).join('');
+
+      let html = `
+        <div style="background-color: #f8fafc; padding: 20px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+          <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); overflow: hidden;">
+            
+            <!-- Header -->
+            <div style="padding: 40px 40px 30px 40px; text-align: center; background-color: #1f2937;">
+              <h1 style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 24px; font-weight: 600; color: #ffffff; line-height: 1.3;">
+                Artist Events
+              </h1>
+              <p style="margin: 8px 0 0 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; color: #9ca3af;">
+                Connecting artists and music lovers
+              </p>
+              ${recipientInfo}
+            </div>
+            
+            <!-- Content -->
+            <div style="padding: 40px 40px 30px 40px;">
+              <!-- Subject Line -->
+              <h2 style="margin: 0 0 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 20px; font-weight: 600; color: #1f2937; line-height: 1.3;">
+                ${subject}
+              </h2>
+              
+              <!-- Greeting -->
+              <p style="margin: 0 0 20px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 16px; color: #374151; line-height: 1.6;">
+                Hello there,
+              </p>
+              
+              <!-- Main Content -->
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 16px; color: #374151; line-height: 1.6;">
+                ${contentParagraphs}
+              </div>
+            </div>`;
+
+      if (ctaText && ctaUrl) {
+        html += `
+            <!-- Call to Action -->
+            <div style="padding: 0 40px 30px 40px; text-align: center;">
+              <div style="margin: 0 auto; display: inline-block;">
+                <div style="background-color: #3b82f6; border-radius: 6px; text-align: center;">
+                  <a href="${ctaUrl}" style="display: inline-block; padding: 14px 28px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 16px; font-weight: 600; color: #ffffff; text-decoration: none; border-radius: 6px;">
+                    ${ctaText}
+                  </a>
+                </div>
+              </div>
+            </div>`;
+      }
+
+      html += `
+            <!-- Quick Links -->
+            <div style="padding: 30px 40px; border-top: 1px solid #e5e7eb;">
+              <div style="text-align: center;">
+                <p style="margin: 0 0 16px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; font-weight: 600; color: #6b7280;">
+                  Quick Links
+                </p>
+                <div style="margin: 0 auto; display: inline-block;">
+                  <span style="padding: 0 12px;">
+                    <a href="#" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; color: #3b82f6; text-decoration: none; font-weight: 500;">
+                      Browse Events
+                    </a>
+                  </span>
+                  <span style="padding: 0 12px; color: #d1d5db;">|</span>
+                  <span style="padding: 0 12px;">
+                    <a href="#" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; color: #3b82f6; text-decoration: none; font-weight: 500;">
+                      Submit Event
+                    </a>
+                  </span>
+                  <span style="padding: 0 12px; color: #d1d5db;">|</span>
+                  <span style="padding: 0 12px;">
+                    <a href="#" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; color: #3b82f6; text-decoration: none; font-weight: 500;">
+                      Dashboard
+                    </a>
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Footer -->
+            <div style="padding: 30px 40px; background-color: #f9fafb; border-top: 1px solid #e5e7eb;">
+              <div style="text-align: center;">
+                <p style="margin: 0 0 12px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; color: #6b7280; line-height: 1.5;">
+                  You're receiving this email as a member of Artist Events.
+                </p>
+                <p style="margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 12px; color: #9ca3af;">
+                  <a href="#" style="color: #6b7280; text-decoration: none;">Manage preferences</a>
+                  <span style="margin: 0 8px; color: #d1d5db;">•</span>
+                  <a href="#" style="color: #6b7280; text-decoration: none;">Unsubscribe</a>
+                </p>
+              </div>
+            </div>
+            
+          </div>
+        </div>
+      `;
+
+      previewDiv.innerHTML = html;
+    }
+
+      // Auto-update preview
+      ['broadcastType', 'emailSubject', 'messageContent', 'ctaText', 'ctaUrl', 'singleUserEmail'].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+          element.addEventListener('input', updatePreview);
+        }
+      });
+      
+      // Also update preview when recipients selection changes
+      recipientsSelect.addEventListener('change', updatePreview);
+
+      // Submit form
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(form);
+        const data = Object.fromEntries(formData);
+        
+        sendBtn.disabled = true;
+        sendBtn.innerHTML = '⏳ Sending...';
+        
+        try {
+          console.log('Sending broadcast data:', data);
+          
+          const response = await fetch('/api/admin/broadcast', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data),
+            credentials: 'include' // Include cookies for authentication
+          });
+          
+          console.log('Response status:', response.status);
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Response error:', errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+          }
+          
+          const result = await response.json();
+          console.log('Success result:', result);
+          
+          alert('✅ ' + (result.message || 'Broadcast sent successfully!'));
+          resetForm();
+          loadRecentBroadcasts();
+          
+        } catch (error) {
+          console.error('Broadcast error:', error);
+          
+          if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            alert('❌ Network error: Unable to connect to server. Please check if the server is running.');
+          } else {
+            alert('❌ Failed to send broadcast: ' + error.message);
+          }
+        } finally {
+          sendBtn.disabled = false;
+          sendBtn.innerHTML = '📧 Send Broadcast';
+        }
+      });
+
+      // Helper functions
+      function resetForm() {
+        form.reset();
+        previewDiv.innerHTML = '<div class="preview-placeholder">Fill in the form above to see a preview of your email</div>';
+        // Hide single user input when form is reset
+        const singleUserGroup = document.getElementById('singleUserGroup');
+        const singleUserEmail = document.getElementById('singleUserEmail');
+        if (singleUserGroup) singleUserGroup.style.display = 'none';
+        if (singleUserEmail) singleUserEmail.required = false;
+      }
+
+      // Make functions globally accessible for onclick handlers
+      window.formatText = function(command) {
+        const textarea = document.getElementById('messageContent');
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const selectedText = textarea.value.substring(start, end);
+        
+        if (selectedText) {
+          let formattedText;
+          if (command === 'bold') {
+            formattedText = `<b>${selectedText}</b>`;
+          } else if (command === 'italic') {
+            formattedText = `<i>${selectedText}</i>`;
+          }
+          
+          textarea.value = textarea.value.substring(0, start) + formattedText + textarea.value.substring(end);
+          updatePreview();
+        }
+      };
+
+      window.insertLink = function() {
+        const url = prompt('Enter URL:');
+        const text = prompt('Enter link text:');
+        if (url && text) {
+          const textarea = document.getElementById('messageContent');
+          const cursorPos = textarea.selectionStart;
+          const linkHTML = `<a href="${url}">${text}</a>`;
+          textarea.value = textarea.value.substring(0, cursorPos) + linkHTML + textarea.value.substring(cursorPos);
+          updatePreview();
+        }
+      };
+
+      window.insertEmoji = function() {
+        const emojis = ['🎵', '🎤', '🎸', '🎧', '🎭', '🎪', '🎨', '✨', '🔥', '💫', '🌟', '👏', '🙌', '❤️', '💜', '🎉'];
+        const emoji = emojis[Math.floor(Math.random() * emojis.length)];
+        const textarea = document.getElementById('messageContent');
+        const cursorPos = textarea.selectionStart;
+        textarea.value = textarea.value.substring(0, cursorPos) + emoji + textarea.value.substring(cursorPos);
+        updatePreview();
+      };
+
+      window.resetForm = function() {
+        resetForm();
+      };
+
+      // Load recent broadcasts
+      async function loadRecentBroadcasts() {
+        try {
+          const response = await fetch('/api/admin/broadcasts/recent');
+          const broadcasts = await response.json();
+          
+          const listDiv = document.getElementById('broadcastsList');
+          
+          if (broadcasts.length === 0) {
+            listDiv.innerHTML = '<div class="loading-placeholder">No broadcasts sent yet</div>';
+            return;
+          }
+          
+          listDiv.innerHTML = broadcasts.map(broadcast => `
+            <div class="broadcast-item">
+              <div class="broadcast-header">
+                <div class="broadcast-subject">${broadcast.subject}</div>
+                <div class="broadcast-date">${new Date(broadcast.sent_at).toLocaleDateString()}</div>
+              </div>
+              <div class="broadcast-meta">
+                Sent to ${broadcast.recipient_count} recipients • ${broadcast.broadcast_type}
+              </div>
+            </div>
+          `).join('');
+          
+        } catch (error) {
+          console.error('Error loading broadcasts:', error);
+          document.getElementById('broadcastsList').innerHTML = '<div class="loading-placeholder">Error loading broadcasts</div>';
+        }
+      }
+
+      // Initialize
+      updatePreview();
+      loadRecentBroadcasts();
+    }); // End of DOMContentLoaded event listener
+  </script>
+</Layout> 

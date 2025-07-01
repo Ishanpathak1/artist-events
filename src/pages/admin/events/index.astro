@@ -120,7 +120,11 @@ const events = await getAllEvents();
         <a href="/admin/users" class="admin-nav-link">👥 Users</a>
         <a href="/admin/events" class="admin-nav-link active">🎪 Events</a>
         <a href="/admin/blogs" class="admin-nav-link">📝 Blogs</a>
-        <a href="/admin/settings" class="admin-nav-link">⚙️ Settings</a>
+        <a href="/admin/email-campaigns" class="admin-nav-link">📧 Email Campaigns</a>
+        <a href="/admin/broadcast" class="admin-nav-link">📢 Broadcast</a>
+        {currentUser?.email === 'ishan.pathak2711@gmail.com' && currentUser?.is_super_admin && (
+          <a href="/admin/admins" class="admin-nav-link">⚙️ Admins</a>
+        )}
       </div>
     </nav>
 

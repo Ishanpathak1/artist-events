@@ -19,7 +19,7 @@ async function getPublishedEvents() {
       SELECT 
         e.id, e.slug, e.title, e.description, e.start_date, e.start_time,
         e.image_url, e.ticket_price, e.event_type, e.status, e.source_type,
-        e.external_id, e.ticket_url, e.custom_location,
+        e.ticket_url, e.custom_location,
         v.name as venue_name, v.address, v.city, v.state,
         array_agg(DISTINCT a.name) as artists,
         array_agg(DISTINCT t.name) as tags
@@ -30,7 +30,9 @@ async function getPublishedEvents() {
       LEFT JOIN event_tags et ON e.id = et.event_id
       LEFT JOIN tags t ON et.tag_id = t.id
       WHERE e.status = 'published'
-      GROUP BY e.id, v.name, v.address, v.city, v.state
+      GROUP BY e.id, e.slug, e.title, e.description, e.start_date, e.start_time,
+        e.image_url, e.ticket_price, e.event_type, e.status, e.source_type,
+        e.ticket_url, e.custom_location, v.name, v.address, v.city, v.state
       ORDER BY e.start_date ASC
     `);
     

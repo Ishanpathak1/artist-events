@@ -1,0 +1,431 @@
+---
+import { authenticateUser } from '../../../lib/auth-middleware.js';
+import { Pool } from 'pg';
+
+// Check authentication
+const authResult = await authenticateUser(Astro.request);
+if (!authResult.user) {
+  return Astro.redirect('/auth/login');
+}
+
+const user = authResult.user;
+
+// Database connection
+const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
+  'postgresql://ishanpathak@localhost:5432/artist_events';
+
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+// Get email templates
+async function getEmailTemplates() {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT id, name, description, category, preview_image_url, variables
+      FROM email_templates 
+      WHERE is_active = true
+      ORDER BY category, name
+    `);
+    return result.rows;
+  } finally {
+    client.release();
+  }
+}
+
+// Get user's campaigns
+async function getUserCampaigns(userId) {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT 
+        ec.*,
+        et.name as template_name,
+        et.category as template_category,
+        CASE 
+          WHEN ec.status = 'pending' THEN '⏳ Pending Review'
+          WHEN ec.status = 'approved' THEN '✅ Approved'
+          WHEN ec.status = 'rejected' THEN '❌ Rejected'
+          WHEN ec.status = 'sent' THEN '📧 Sent'
+          WHEN ec.status = 'draft' THEN '📝 Draft'
+          ELSE ec.status
+        END as status_display
+      FROM email_campaigns ec
+      JOIN email_templates et ON ec.template_id = et.id
+      WHERE ec.artist_id = $1
+      ORDER BY ec.created_at DESC
+    `, [userId]);
+    return result.rows;
+  } finally {
+    client.release();
+  }
+}
+
+// Get subscriber count for audience estimation
+async function getSubscriberCount() {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT COUNT(*) as count
+      FROM email_subscriptions 
+      WHERE is_subscribed = true
+    `);
+    return result.rows[0].count;
+  } finally {
+    client.release();
+  }
+}
+
+const templates = await getEmailTemplates();
+const campaigns = await getUserCampaigns(user.id);
+const subscriberCount = await getSubscriberCount();
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Email Campaigns - Artist Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        line-height: 1.6;
+        color: #1e293b;
+        background: #f8fafc;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 3rem;
+        padding: 2rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 20px;
+        color: white;
+      }
+
+      .header h1 {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+      }
+
+      .header p {
+        opacity: 0.9;
+        font-size: 1.1rem;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 3rem;
+      }
+
+      .stat-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 15px;
+        text-align: center;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      }
+
+      .stat-number {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #667eea;
+        display: block;
+      }
+
+      .stat-label {
+        color: #64748b;
+        font-size: 0.9rem;
+        margin-top: 0.5rem;
+      }
+
+      .section {
+        background: white;
+        border-radius: 20px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      }
+
+      .section-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+        color: #1e293b;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 12px 24px;
+        border-radius: 10px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+        font-size: 0.95rem;
+      }
+
+      .btn-primary {
+        background: #667eea;
+        color: white;
+      }
+
+      .btn-primary:hover {
+        background: #5a67d8;
+        transform: translateY(-2px);
+      }
+
+      .btn-secondary {
+        background: #f1f5f9;
+        color: #64748b;
+      }
+
+      .btn-secondary:hover {
+        background: #e2e8f0;
+      }
+
+      .templates-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+      }
+
+      .template-card {
+        border: 2px solid #e2e8f0;
+        border-radius: 15px;
+        overflow: hidden;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        background: white;
+      }
+
+      .template-card:hover {
+        border-color: #667eea;
+        transform: translateY(-4px);
+      }
+
+      .template-card.selected {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      .template-preview {
+        height: 200px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 3rem;
+        color: white;
+        position: relative;
+      }
+
+      .template-category {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: rgba(255, 255, 255, 0.9);
+        color: #1e293b;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+      }
+
+      .template-info {
+        padding: 1.5rem;
+      }
+
+      .template-name {
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        color: #1e293b;
+      }
+
+      .template-description {
+        color: #64748b;
+        font-size: 0.9rem;
+        line-height: 1.5;
+      }
+
+      .no-campaigns {
+        text-align: center;
+        padding: 3rem;
+        color: #64748b;
+      }
+
+      .no-campaigns h3 {
+        margin-bottom: 1rem;
+        font-size: 1.5rem;
+      }
+
+      @media (max-width: 768px) {
+        .container {
+          padding: 1rem;
+        }
+
+        .templates-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .stats-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- Header -->
+      <div class="header">
+        <h1>📧 Email Campaigns</h1>
+        <p>Connect with your audience through beautiful, targeted email campaigns</p>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-number">{campaigns.length}</span>
+          <span class="stat-label">Total Campaigns</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-number">{campaigns.filter(c => c.status === 'sent').length}</span>
+          <span class="stat-label">Sent Campaigns</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-number">{campaigns.filter(c => c.status === 'pending').length}</span>
+          <span class="stat-label">Pending Review</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-number">{subscriberCount}</span>
+          <span class="stat-label">Subscribers</span>
+        </div>
+      </div>
+
+      <!-- Create Campaign Section -->
+      <div class="section">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+          <h2 class="section-title">📝 Choose Your Template</h2>
+        </div>
+
+        <div class="templates-grid">
+          {templates.map(template => (
+            <div class="template-card" data-template-id={template.id}>
+              <div class="template-preview">
+                <div class="template-category">{template.category}</div>
+                📧
+              </div>
+              <div class="template-info">
+                <h3 class="template-name">{template.name}</h3>
+                <p class="template-description">{template.description}</p>
+                <button class="btn btn-primary" style="margin-top: 1rem; width: 100%;" onclick={`createCampaign(${template.id})`}>
+                  Use This Template
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <!-- My Campaigns -->
+      <div class="section">
+        <h2 class="section-title">🗂️ My Campaigns</h2>
+        
+        {campaigns.length > 0 ? (
+          <div style="display: grid; gap: 1rem;">
+            {campaigns.map(campaign => (
+              <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+                  <div>
+                    <h3 style="font-size: 1.2rem; font-weight: 700; margin-bottom: 0.5rem;">{campaign.subject}</h3>
+                    <p style="color: #64748b; margin-bottom: 0.5rem;">{campaign.template_name} • {campaign.template_category}</p>
+                    <p style="font-size: 0.9rem; color: #64748b;">
+                      Created: {new Date(campaign.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div style="text-align: right;">
+                    <span style={`
+                      padding: 0.25rem 0.75rem; 
+                      border-radius: 20px; 
+                      font-size: 0.8rem; 
+                      font-weight: 600;
+                      ${campaign.status === 'pending' ? 'background: #fef3c7; color: #d97706;' : ''}
+                      ${campaign.status === 'approved' ? 'background: #d1fae5; color: #059669;' : ''}
+                      ${campaign.status === 'rejected' ? 'background: #fee2e2; color: #dc2626;' : ''}
+                      ${campaign.status === 'sent' ? 'background: #dbeafe; color: #2563eb;' : ''}
+                      ${campaign.status === 'draft' ? 'background: #f3f4f6; color: #6b7280;' : ''}
+                    `}>
+                      {campaign.status_display}
+                    </span>
+                  </div>
+                </div>
+                
+                {campaign.admin_notes && (
+                  <div style="background: #fef3c7; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <strong>Admin Notes:</strong> {campaign.admin_notes}
+                  </div>
+                )}
+                
+                {campaign.status === 'sent' && (
+                  <div style="background: #f1f5f9; padding: 1rem; border-radius: 8px;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1rem;">
+                      <div style="text-align: center;">
+                        <div style="font-size: 1.5rem; font-weight: 700; color: #667eea;">{campaign.emails_sent || 0}</div>
+                        <div style="font-size: 0.8rem; color: #64748b;">Sent</div>
+                      </div>
+                      <div style="text-align: center;">
+                        <div style="font-size: 1.5rem; font-weight: 700; color: #059669;">{campaign.emails_opened || 0}</div>
+                        <div style="font-size: 0.8rem; color: #64748b;">Opened</div>
+                      </div>
+                      <div style="text-align: center;">
+                        <div style="font-size: 1.5rem; font-weight: 700; color: #dc2626;">{campaign.emails_clicked || 0}</div>
+                        <div style="font-size: 0.8rem; color: #64748b;">Clicked</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div class="no-campaigns">
+            <h3>📬 No campaigns yet</h3>
+            <p>Create your first email campaign to connect with your audience!</p>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <script>
+      function createCampaign(templateId) {
+        // Redirect to campaign creation page with template
+        window.location.href = `/dashboard/email-campaigns/create?template=${templateId}`;
+      }
+    </script>
+  </body>
+</html> 

@@ -1,0 +1,605 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { Pool } from 'pg';
+
+// Database configuration
+const DB_CONFIG = (() => {
+  if (process.env.NEON_DATABASE_URL) {
+    return {
+      connectionString: process.env.NEON_DATABASE_URL,
+      ssl: { rejectUnauthorized: false }
+    };
+  }
+  
+  if (process.env.DATABASE_URL) {
+    return {
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    };
+  }
+  
+  return {
+    host: process.env.DB_HOST || 'localhost',
+    port: process.env.DB_PORT || 5432,
+    database: process.env.DB_NAME || 'artist_events',
+    user: process.env.DB_USER || 'ishanpathak',
+    password: process.env.DB_PASSWORD || '',
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  };
+})();
+
+// Get URL parameters
+const url = new URL(Astro.request.url);
+const email = url.searchParams.get('email');
+const userId = url.searchParams.get('user_id');
+const campaignId = url.searchParams.get('campaign_id');
+const broadcastId = url.searchParams.get('broadcast_id');
+
+let unsubscribeResult = null;
+let userInfo = null;
+
+// Handle automatic unsubscribe from email links
+if (email || userId) {
+  const pool = new Pool(DB_CONFIG);
+  const client = await pool.connect();
+  
+  try {
+    let targetUserId = userId;
+    
+    // If we have email but no userId, find the user
+    if (email && !userId) {
+      const userResult = await client.query(
+        'SELECT id, name, email FROM users WHERE email = $1',
+        [email]
+      );
+      
+      if (userResult.rows.length > 0) {
+        targetUserId = userResult.rows[0].id;
+        userInfo = userResult.rows[0];
+      }
+    } else if (userId) {
+      const userResult = await client.query(
+        'SELECT id, name, email FROM users WHERE id = $1',
+        [targetUserId]
+      );
+      
+      if (userResult.rows.length > 0) {
+        userInfo = userResult.rows[0];
+      }
+    }
+    
+    if (targetUserId && userInfo) {
+      // Check current subscription status
+      const subResult = await client.query(
+        'SELECT is_subscribed FROM email_subscriptions WHERE user_id = $1',
+        [targetUserId]
+      );
+      
+      if (subResult.rows.length > 0 && subResult.rows[0].is_subscribed) {
+        // Unsubscribe the user
+        await client.query(`
+          UPDATE email_subscriptions 
+          SET is_subscribed = false, unsubscribed_at = NOW()
+          WHERE user_id = $1
+        `, [targetUserId]);
+        
+        // Track unsubscribe for specific campaign/broadcast if provided
+        if (campaignId) {
+          await client.query(`
+            UPDATE email_recipients 
+            SET unsubscribed_at = NOW()
+            WHERE campaign_id = $1 AND user_id = $2
+          `, [campaignId, targetUserId]);
+        }
+        
+        if (broadcastId) {
+          await client.query(`
+            UPDATE email_recipients 
+            SET unsubscribed_at = NOW()
+            WHERE broadcast_id = $1 AND user_id = $2
+          `, [broadcastId, targetUserId]);
+        }
+        
+        unsubscribeResult = 'success';
+      } else {
+        unsubscribeResult = 'already_unsubscribed';
+      }
+    } else {
+      unsubscribeResult = 'user_not_found';
+    }
+    
+  } catch (error) {
+    console.error('Unsubscribe error:', error);
+    unsubscribeResult = 'error';
+  } finally {
+    client.release();
+  }
+}
+---
+
+<Layout title="Email Preferences - Artist Events">
+  <div class="unsubscribe-container">
+    {unsubscribeResult ? (
+      <!-- Automatic Unsubscribe Result -->
+      <div class="unsubscribe-result">
+        {unsubscribeResult === 'success' && (
+          <div class="result-card success">
+            <div class="result-icon">✅</div>
+            <h1>Successfully Unsubscribed</h1>
+            <p class="result-message">
+              Hi {userInfo?.name || 'there'}! You have been successfully unsubscribed from Artist Events email notifications.
+            </p>
+            <div class="result-details">
+              <p><strong>Email:</strong> {userInfo?.email}</p>
+              <p><strong>Date:</strong> {new Date().toLocaleDateString()}</p>
+            </div>
+            <div class="action-buttons">
+              <a href="/" class="btn btn-primary">← Back to Artist Events</a>
+              <button class="btn btn-secondary" onclick="showResubscribeForm()">
+                Want to resubscribe?
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {unsubscribeResult === 'already_unsubscribed' && (
+          <div class="result-card info">
+            <div class="result-icon">ℹ️</div>
+            <h1>Already Unsubscribed</h1>
+            <p class="result-message">
+              You're already unsubscribed from our email notifications.
+            </p>
+            <div class="action-buttons">
+              <a href="/" class="btn btn-primary">← Back to Artist Events</a>
+            </div>
+          </div>
+        )}
+        
+        {unsubscribeResult === 'user_not_found' && (
+          <div class="result-card error">
+            <div class="result-icon">❌</div>
+            <h1>User Not Found</h1>
+            <p class="result-message">
+              We couldn't find your email address in our system.
+            </p>
+            <div class="action-buttons">
+              <a href="/" class="btn btn-primary">← Back to Artist Events</a>
+            </div>
+          </div>
+        )}
+        
+        {unsubscribeResult === 'error' && (
+          <div class="result-card error">
+            <div class="result-icon">⚠️</div>
+            <h1>Something Went Wrong</h1>
+            <p class="result-message">
+              There was an error processing your unsubscribe request. Please try again later.
+            </p>
+            <div class="action-buttons">
+              <a href="/" class="btn btn-primary">← Back to Artist Events</a>
+            </div>
+          </div>
+        )}
+      </div>
+    ) : (
+      <!-- Manual Unsubscribe Form -->
+      <div class="unsubscribe-form">
+        <div class="form-header">
+          <h1>📧 Email Preferences</h1>
+          <p>Manage your Artist Events email notifications</p>
+        </div>
+        
+        <div class="preference-card">
+          <h2>Unsubscribe from Emails</h2>
+          <p>We're sorry to see you go! Enter your email address below to unsubscribe from all Artist Events notifications.</p>
+          
+          <form id="unsubscribeForm">
+            <div class="form-group">
+              <label for="email">Email Address</label>
+              <input 
+                type="email" 
+                id="email" 
+                name="email" 
+                required 
+                placeholder="your@email.com"
+                class="form-control"
+              />
+            </div>
+            
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" id="confirmUnsubscribe" required>
+                I understand that I will no longer receive any email notifications from Artist Events
+              </label>
+            </div>
+            
+            <button type="submit" class="btn btn-danger" id="unsubscribeBtn">
+              🚫 Unsubscribe Me
+            </button>
+          </form>
+        </div>
+      </div>
+    )}
+    
+    <!-- Resubscribe Form (hidden by default) -->
+    <div id="resubscribeForm" class="resubscribe-form" style="display: none;">
+      <div class="form-header">
+        <h2>🎵 Welcome Back!</h2>
+        <p>We'd love to have you back in our community</p>
+      </div>
+      
+      <form id="resubscribeFormElement">
+        <div class="form-group">
+          <label for="resubEmail">Email Address</label>
+          <input 
+            type="email" 
+            id="resubEmail" 
+            name="email" 
+            required 
+            value={userInfo?.email || ''}
+            class="form-control"
+          />
+        </div>
+        
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="confirmResubscribe" required>
+            <span class="checkmark"></span>
+            I want to receive email notifications from Artist Events
+          </label>
+        </div>
+        
+        <button type="submit" class="btn btn-success">
+          ✅ Resubscribe Me
+        </button>
+        
+        <button type="button" class="btn btn-secondary" onclick="hideResubscribeForm()">
+          Cancel
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <style>
+    .unsubscribe-container {
+      max-width: 600px;
+      margin: 2rem auto;
+      padding: 2rem;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    .result-card {
+      background: white;
+      border-radius: 16px;
+      padding: 3rem 2rem;
+      text-align: center;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      margin-bottom: 2rem;
+      border: 1px solid #e5e7eb;
+    }
+
+    .result-card.success {
+      border-left: 5px solid #10b981;
+    }
+
+    .result-card.info {
+      border-left: 5px solid #3b82f6;
+    }
+
+    .result-card.error {
+      border-left: 5px solid #ef4444;
+    }
+
+    .result-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+
+    .result-card h1 {
+      color: #1e293b;
+      margin: 0 0 1rem 0;
+      font-size: 2rem;
+      font-weight: 700;
+    }
+
+    .result-message {
+      color: #64748b;
+      font-size: 1.1rem;
+      line-height: 1.6;
+      margin-bottom: 2rem;
+    }
+
+    .result-details {
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 2rem;
+      text-align: left;
+    }
+
+    .result-details p {
+      margin: 0.5rem 0;
+      color: #374151;
+    }
+
+    .form-header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    .form-header h1, .form-header h2 {
+      color: #1e293b;
+      margin: 0 0 0.5rem 0;
+      font-size: 2rem;
+      font-weight: 700;
+    }
+
+    .form-header p {
+      color: #64748b;
+      font-size: 1.1rem;
+    }
+
+    .preference-card {
+      background: white;
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      margin-bottom: 2rem;
+      border: 1px solid #e5e7eb;
+    }
+
+    .preference-card h2 {
+      color: #1e293b;
+      margin: 0 0 1rem 0;
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+
+    .preference-card p {
+      color: #64748b;
+      line-height: 1.6;
+      margin-bottom: 2rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 0.5rem;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .checkbox-label {
+      display: flex !important;
+      align-items: flex-start;
+      gap: 0.75rem;
+      cursor: pointer;
+      font-weight: normal !important;
+    }
+
+    .checkbox-label input[type="checkbox"] {
+      margin: 0;
+      width: auto;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 12px 24px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 1rem;
+      transition: all 0.3s ease;
+      border: none;
+      cursor: pointer;
+      margin: 0.5rem;
+    }
+
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #5a67d8;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: #f1f5f9;
+      color: #64748b;
+    }
+
+    .btn-secondary:hover {
+      background: #e2e8f0;
+    }
+
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #dc2626;
+      transform: translateY(-1px);
+    }
+
+    .btn-success {
+      background: #10b981;
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #059669;
+      transform: translateY(-1px);
+    }
+
+    .action-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .info-section {
+      background: #f8fafc;
+      border-radius: 16px;
+      padding: 2rem;
+      margin-top: 2rem;
+    }
+
+    .info-section h3 {
+      color: #1e293b;
+      margin: 0 0 1rem 0;
+      font-size: 1.3rem;
+      font-weight: 600;
+    }
+
+    .features-list {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 2rem 0;
+    }
+
+    .features-list li {
+      color: #374151;
+      margin: 0.75rem 0;
+      font-size: 1rem;
+    }
+
+    .note {
+      background: white;
+      border-radius: 8px;
+      padding: 1rem;
+      color: #64748b;
+      font-size: 0.9rem;
+      border-left: 4px solid #667eea;
+    }
+
+    .resubscribe-form {
+      background: white;
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      margin-top: 2rem;
+      border: 1px solid #10b981;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      .unsubscribe-container {
+        margin: 1rem;
+        padding: 1rem;
+      }
+
+      .result-card, .preference-card {
+        padding: 1.5rem;
+      }
+
+      .action-buttons {
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .btn {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+
+  <script>
+    // Handle manual unsubscribe form
+    document.getElementById('unsubscribeForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const email = document.getElementById('email').value;
+      const btn = document.getElementById('unsubscribeBtn');
+      
+      btn.disabled = true;
+      btn.innerHTML = '⏳ Processing...';
+      
+      try {
+        const response = await fetch('/api/email/unsubscribe', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+          // Reload page with success
+          window.location.href = `/unsubscribe?email=${encodeURIComponent(email)}`;
+        } else {
+          throw new Error(result.error || 'Failed to unsubscribe');
+        }
+      } catch (error) {
+        alert('Error: ' + error.message);
+        btn.disabled = false;
+        btn.innerHTML = '🚫 Unsubscribe Me';
+      }
+    });
+
+    // Handle resubscribe form
+    document.getElementById('resubscribeFormElement')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const email = document.getElementById('resubEmail').value;
+      
+      try {
+        const response = await fetch('/api/email/resubscribe', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+          alert('✅ Welcome back! You have been resubscribed successfully.');
+          window.location.href = '/';
+        } else {
+          throw new Error(result.error || 'Failed to resubscribe');
+        }
+      } catch (error) {
+        alert('Error: ' + error.message);
+      }
+    });
+
+    // Show/hide resubscribe form
+    function showResubscribeForm() {
+      document.getElementById('resubscribeForm').style.display = 'block';
+      document.querySelector('.action-buttons').style.display = 'none';
+    }
+
+    function hideResubscribeForm() {
+      document.getElementById('resubscribeForm').style.display = 'none';
+      document.querySelector('.action-buttons').style.display = 'flex';
+    }
+  </script>
+</Layout> 

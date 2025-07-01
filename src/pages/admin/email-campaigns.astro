@@ -1,0 +1,690 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { authenticateUser } from '../../../lib/auth-middleware.js';
+import { Pool } from 'pg';
+
+// Check admin authentication
+const authResult = await authenticateUser(Astro.request);
+if (!authResult.user || (authResult.user.user_type !== 'admin' && authResult.user.role !== 'admin')) {
+  return Astro.redirect('/auth/login');
+}
+
+const admin = authResult.user;
+
+// Database connection
+const connectionString = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL || 
+  'postgresql://ishanpathak@localhost:5432/artist_events';
+
+const pool = new Pool({
+  connectionString,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+// Get all campaigns for admin review
+async function getAllCampaigns() {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT 
+        ec.*,
+        u.first_name, u.last_name, u.email as artist_email,
+        et.name as template_name, et.category as template_category,
+        reviewer.first_name as reviewer_first_name,
+        reviewer.last_name as reviewer_last_name,
+        CASE 
+          WHEN ec.status = 'pending' THEN '⏳ Pending Review'
+          WHEN ec.status = 'approved' THEN '✅ Approved'
+          WHEN ec.status = 'rejected' THEN '❌ Rejected'
+          WHEN ec.status = 'sent' THEN '📧 Sent'
+          WHEN ec.status = 'draft' THEN '📝 Draft'
+          ELSE ec.status
+        END as status_display
+      FROM email_campaigns ec
+      JOIN users u ON ec.artist_id = u.id
+      JOIN email_templates et ON ec.template_id = et.id
+      LEFT JOIN users reviewer ON ec.reviewed_by = reviewer.id
+      ORDER BY 
+        CASE ec.status 
+          WHEN 'pending' THEN 1 
+          WHEN 'approved' THEN 2 
+          WHEN 'sent' THEN 3 
+          ELSE 4 
+        END,
+        ec.created_at DESC
+    `);
+    return result.rows;
+  } finally {
+    client.release();
+  }
+}
+
+// Get campaign statistics
+async function getCampaignStats() {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(`
+      SELECT 
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE status = 'pending') as pending,
+        COUNT(*) FILTER (WHERE status = 'approved') as approved,
+        COUNT(*) FILTER (WHERE status = 'sent') as sent,
+        COUNT(*) FILTER (WHERE status = 'rejected') as rejected,
+        SUM(emails_sent) FILTER (WHERE status = 'sent') as total_emails_sent,
+        SUM(emails_opened) FILTER (WHERE status = 'sent') as total_emails_opened
+      FROM email_campaigns
+    `);
+    return result.rows[0];
+  } finally {
+    client.release();
+  }
+}
+
+const campaigns = await getAllCampaigns();
+const stats = await getCampaignStats();
+---
+
+<AdminLayout title="Email Campaign Management">
+  <style>
+    .campaign-management {
+      padding: 2rem;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 3rem;
+    }
+
+    .stat-card {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 15px;
+      text-align: center;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      border: 1px solid #e2e8f0;
+    }
+
+    .stat-number {
+      font-size: 2rem;
+      font-weight: 700;
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-number.pending { color: #d97706; }
+    .stat-number.approved { color: #059669; }
+    .stat-number.sent { color: #2563eb; }
+    .stat-number.rejected { color: #dc2626; }
+    .stat-number.total { color: #667eea; }
+
+    .stat-label {
+      color: #64748b;
+      font-size: 0.9rem;
+    }
+
+    .campaigns-section {
+      background: white;
+      border-radius: 20px;
+      padding: 2rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+
+    .section-title {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .filter-tabs {
+      display: flex;
+      gap: 0.5rem;
+      background: #f1f5f9;
+      padding: 0.25rem;
+      border-radius: 12px;
+    }
+
+    .filter-tab {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      color: #64748b;
+      transition: all 0.3s ease;
+    }
+
+    .filter-tab.active {
+      background: white;
+      color: #667eea;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .campaign-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 15px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      transition: all 0.3s ease;
+    }
+
+    .campaign-card:hover {
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+    }
+
+    .campaign-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 1rem;
+    }
+
+    .campaign-info h3 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: #1e293b;
+    }
+
+    .campaign-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      font-size: 0.9rem;
+      color: #64748b;
+      margin-bottom: 0.5rem;
+    }
+
+    .status-badge {
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
+    .status-pending { background: #fef3c7; color: #d97706; }
+    .status-approved { background: #d1fae5; color: #059669; }
+    .status-rejected { background: #fee2e2; color: #dc2626; }
+    .status-sent { background: #dbeafe; color: #2563eb; }
+    .status-draft { background: #f3f4f6; color: #6b7280; }
+
+    .campaign-content {
+      background: #f8fafc;
+      padding: 1rem;
+      border-radius: 10px;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    .campaign-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 8px 16px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.85rem;
+      transition: all 0.3s ease;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-primary { background: #667eea; color: white; }
+    .btn-success { background: #059669; color: white; }
+    .btn-danger { background: #dc2626; color: white; }
+    .btn-secondary { background: #f1f5f9; color: #64748b; }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .campaign-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+      gap: 1rem;
+      background: #f1f5f9;
+      padding: 1rem;
+      border-radius: 10px;
+      text-align: center;
+    }
+
+    .campaign-stats .stat {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .campaign-stats .stat-number {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #667eea;
+    }
+
+    .campaign-stats .stat-label {
+      font-size: 0.75rem;
+      color: #64748b;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      backdrop-filter: blur(4px);
+    }
+
+    .modal.active {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 20px;
+      padding: 2rem;
+      max-width: 800px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: #64748b;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+      color: #1e293b;
+    }
+
+    .form-textarea {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      font-size: 1rem;
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    .form-textarea:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 1rem;
+      justify-content: flex-end;
+      padding-top: 1rem;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    @media (max-width: 768px) {
+      .campaign-management {
+        padding: 1rem;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .campaign-header {
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .campaign-actions {
+        justify-content: flex-start;
+      }
+    }
+  </style>
+
+  <div class="campaign-management">
+    <!-- Statistics -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-number total">{stats.total || 0}</span>
+        <span class="stat-label">Total Campaigns</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-number pending">{stats.pending || 0}</span>
+        <span class="stat-label">Pending Review</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-number approved">{stats.approved || 0}</span>
+        <span class="stat-label">Approved</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-number sent">{stats.sent || 0}</span>
+        <span class="stat-label">Sent</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-number total">{stats.total_emails_sent || 0}</span>
+        <span class="stat-label">Total Emails Sent</span>
+      </div>
+    </div>
+
+    <!-- Campaigns Section -->
+    <div class="campaigns-section">
+      <div class="section-header">
+        <h2 class="section-title">📧 Email Campaigns</h2>
+        <div class="filter-tabs">
+          <button class="filter-tab active" data-filter="all">All</button>
+          <button class="filter-tab" data-filter="pending">Pending</button>
+          <button class="filter-tab" data-filter="approved">Approved</button>
+          <button class="filter-tab" data-filter="sent">Sent</button>
+        </div>
+      </div>
+
+      <div id="campaignsContainer">
+        {campaigns.map(campaign => (
+          <div class="campaign-card" data-status={campaign.status}>
+            <div class="campaign-header">
+              <div class="campaign-info">
+                <h3>{campaign.subject}</h3>
+                <div class="campaign-meta">
+                  <span>👤 {campaign.first_name} {campaign.last_name}</span>
+                  <span>📧 {campaign.artist_email}</span>
+                  <span>🎨 {campaign.template_name}</span>
+                  <span>📅 {new Date(campaign.created_at).toLocaleDateString()}</span>
+                  {campaign.target_audience !== 'all' && (
+                    <span>🎯 {campaign.target_audience}</span>
+                  )}
+                </div>
+              </div>
+              <span class={`status-badge status-${campaign.status}`}>
+                {campaign.status_display}
+              </span>
+            </div>
+
+            {campaign.admin_notes && (
+              <div style="background: #fef3c7; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                <strong>Admin Notes:</strong> {campaign.admin_notes}
+                {campaign.reviewer_first_name && (
+                  <div style="font-size: 0.8rem; color: #64748b; margin-top: 0.5rem;">
+                    — {campaign.reviewer_first_name} {campaign.reviewer_last_name}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {campaign.status === 'sent' && (
+              <div class="campaign-stats">
+                <div class="stat">
+                  <span class="stat-number">{campaign.emails_sent || 0}</span>
+                  <span class="stat-label">Sent</span>
+                </div>
+                <div class="stat">
+                  <span class="stat-number">{campaign.emails_opened || 0}</span>
+                  <span class="stat-label">Opened</span>
+                </div>
+                <div class="stat">
+                  <span class="stat-number">{campaign.emails_clicked || 0}</span>
+                  <span class="stat-label">Clicked</span>
+                </div>
+                <div class="stat">
+                  <span class="stat-number">
+                    {campaign.emails_sent > 0 ? Math.round((campaign.emails_opened / campaign.emails_sent) * 100) : 0}%
+                  </span>
+                  <span class="stat-label">Open Rate</span>
+                </div>
+              </div>
+            )}
+
+            <div class="campaign-actions">
+              <button class="btn btn-secondary" onclick={`previewCampaign(${campaign.id})`}>
+                👁️ Preview
+              </button>
+              
+              {campaign.status === 'pending' && (
+                <>
+                  <button class="btn btn-success" onclick={`approveCampaign(${campaign.id})`}>
+                    ✅ Approve
+                  </button>
+                  <button class="btn btn-danger" onclick={`rejectCampaign(${campaign.id})`}>
+                    ❌ Reject
+                  </button>
+                </>
+              )}
+              
+              {campaign.status === 'approved' && (
+                <button class="btn btn-primary" onclick={`sendCampaign(${campaign.id})`}>
+                  📤 Send Now
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {campaigns.length === 0 && (
+        <div style="text-align: center; padding: 3rem; color: #64748b;">
+          <h3>📬 No campaigns yet</h3>
+          <p>Email campaigns will appear here when artists create them.</p>
+        </div>
+      )}
+    </div>
+  </div>
+
+  <!-- Rejection Modal -->
+  <div class="modal" id="rejectModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Reject Campaign</h3>
+        <button class="modal-close" onclick="closeModal('rejectModal')">&times;</button>
+      </div>
+      
+      <form id="rejectForm">
+        <div class="form-group">
+          <label class="form-label">Reason for rejection *</label>
+          <textarea 
+            class="form-textarea" 
+            id="rejectionReason"
+            placeholder="Explain why this campaign was rejected so the artist can improve it..."
+            required
+          ></textarea>
+        </div>
+        
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('rejectModal')">
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-danger">
+            ❌ Reject Campaign
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Preview Modal -->
+  <div class="modal" id="previewModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Campaign Preview</h3>
+        <button class="modal-close" onclick="closeModal('previewModal')">&times;</button>
+      </div>
+      
+      <div id="previewContent">
+        Loading preview...
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentCampaignId = null;
+
+    // Filter functionality
+    document.querySelectorAll('.filter-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        
+        const filter = tab.dataset.filter;
+        const campaigns = document.querySelectorAll('.campaign-card');
+        
+        campaigns.forEach(campaign => {
+          if (filter === 'all' || campaign.dataset.status === filter) {
+            campaign.style.display = 'block';
+          } else {
+            campaign.style.display = 'none';
+          }
+        });
+      });
+    });
+
+    // Campaign actions
+    async function approveCampaign(campaignId) {
+      if (!confirm('Approve this campaign? It will be ready to send to subscribers.')) return;
+      
+      try {
+        const response = await fetch(`/api/admin/email-campaigns/${campaignId}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          alert('✅ Campaign approved successfully!');
+          window.location.reload();
+        } else {
+          alert('Error: ' + result.message);
+        }
+      } catch (error) {
+        alert('Failed to approve campaign');
+      }
+    }
+
+    function rejectCampaign(campaignId) {
+      currentCampaignId = campaignId;
+      document.getElementById('rejectModal').classList.add('active');
+    }
+
+    async function sendCampaign(campaignId) {
+      if (!confirm('Send this campaign now? Emails will be sent to all matching subscribers.')) return;
+      
+      try {
+        const response = await fetch(`/api/admin/email-campaigns/${campaignId}/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          alert(`📧 Campaign sent successfully!\n\nSent to: ${result.totalRecipients} recipients\nEmails delivered: ${result.emailsSent}`);
+          window.location.reload();
+        } else {
+          alert('Error: ' + result.message);
+        }
+      } catch (error) {
+        alert('Failed to send campaign');
+      }
+    }
+
+    async function previewCampaign(campaignId) {
+      document.getElementById('previewModal').classList.add('active');
+      document.getElementById('previewContent').innerHTML = 'Loading preview...';
+      
+      try {
+        const response = await fetch(`/api/admin/email-campaigns/${campaignId}/preview`);
+        const result = await response.json();
+        
+        if (result.success) {
+          document.getElementById('previewContent').innerHTML = result.preview;
+        } else {
+          document.getElementById('previewContent').innerHTML = 'Failed to load preview';
+        }
+      } catch (error) {
+        document.getElementById('previewContent').innerHTML = 'Error loading preview';
+      }
+    }
+
+    // Rejection form
+    document.getElementById('rejectForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const reason = document.getElementById('rejectionReason').value;
+      
+      try {
+        const response = await fetch(`/api/admin/email-campaigns/${currentCampaignId}/reject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: reason })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          alert('❌ Campaign rejected successfully');
+          closeModal('rejectModal');
+          window.location.reload();
+        } else {
+          alert('Error: ' + result.message);
+        }
+      } catch (error) {
+        alert('Failed to reject campaign');
+      }
+    });
+
+    function closeModal(modalId) {
+      document.getElementById(modalId).classList.remove('active');
+      if (modalId === 'rejectModal') {
+        document.getElementById('rejectionReason').value = '';
+      }
+    }
+
+    // Close modals on outside click
+    document.querySelectorAll('.modal').forEach(modal => {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          closeModal(modal.id);
+        }
+      });
+    });
+  </script>
+</AdminLayout> 
