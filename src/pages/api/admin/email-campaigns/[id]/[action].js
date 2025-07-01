@@ -48,22 +48,22 @@ export async function POST({ params, request }) {
   try {
     const { id, action } = params;
     
-    // Authenticate admin
+    // Authenticate user (admin or campaign owner)
     const authResult = await authenticateUser(request);
-    if (!authResult.user || authResult.user.user_type !== 'admin') {
-      return new Response(JSON.stringify({ error: 'Admin access required' }), {
+    if (!authResult.user) {
+      return new Response(JSON.stringify({ error: 'Authentication required' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    const admin = authResult.user;
+    const user = authResult.user;
     const client = await pool.connect();
 
     try {
-      // Get campaign details
+      // Get campaign details first to check ownership
       const campaignResult = await client.query(
-        'SELECT * FROM email_campaigns WHERE id = $1',
+        'SELECT * FROM artist_email_campaigns WHERE id = $1',
         [id]
       );
 
@@ -76,16 +76,49 @@ export async function POST({ params, request }) {
 
       const campaign = campaignResult.rows[0];
 
+      // Check permissions: Admin can do anything, artists can only send their own approved campaigns
+      const isAdmin = user.user_type === 'admin';
+      const isOwner = campaign.artist_id === user.id;
+      const isSendAction = action === 'send';
+
+      if (!isAdmin && (!isOwner || !isSendAction)) {
+        return new Response(JSON.stringify({ 
+          error: isSendAction 
+            ? 'You can only send your own campaigns' 
+            : 'Admin access required for this action'
+        }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      // For send action, verify campaign is approved
+      if (isSendAction && campaign.status !== 'approved') {
+        return new Response(JSON.stringify({ 
+          error: 'Campaign must be approved before sending' 
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
       switch (action) {
         case 'approve':
-          return await approveCampaign(client, id, admin.id);
-        
         case 'reject':
-          const body = await request.json();
-          return await rejectCampaign(client, id, admin.id, body.notes);
+          // Only admins can approve/reject
+          if (!isAdmin) {
+            return new Response(JSON.stringify({ error: 'Admin access required' }), {
+              status: 403,
+              headers: { 'Content-Type': 'application/json' }
+            });
+          }
+          return action === 'approve' 
+            ? await approveCampaign(client, id, user.id)
+            : await rejectCampaign(client, id, user.id, (await request.json()).notes);
         
         case 'send':
-          return await sendCampaign(client, campaign, admin.id);
+          // Both admins and campaign owners can send approved campaigns
+          return await sendCampaign(client, campaign, user.id);
         
         default:
           return new Response(JSON.stringify({ error: 'Invalid action' }), {
@@ -111,17 +144,48 @@ export async function GET({ params, request }) {
   try {
     const { id, action } = params;
     
-    // Authenticate admin
+    // Authenticate user (admin or campaign owner)
     const authResult = await authenticateUser(request);
-    if (!authResult.user || authResult.user.user_type !== 'admin') {
-      return new Response(JSON.stringify({ error: 'Admin access required' }), {
+    if (!authResult.user) {
+      return new Response(JSON.stringify({ error: 'Authentication required' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
+    const user = authResult.user;
+
     if (action === 'preview') {
-      return await previewCampaign(id);
+      // Check if user can access this campaign
+      const client = await pool.connect();
+      try {
+        const campaignResult = await client.query(
+          'SELECT artist_id FROM artist_email_campaigns WHERE id = $1',
+          [id]
+        );
+
+        if (campaignResult.rows.length === 0) {
+          return new Response(JSON.stringify({ error: 'Campaign not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        const campaign = campaignResult.rows[0];
+        const isAdmin = user.user_type === 'admin';
+        const isOwner = campaign.artist_id === user.id;
+
+        if (!isAdmin && !isOwner) {
+          return new Response(JSON.stringify({ error: 'Access denied' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        return await previewCampaign(id);
+      } finally {
+        client.release();
+      }
     }
 
     return new Response(JSON.stringify({ error: 'Invalid action' }), {
@@ -141,7 +205,7 @@ export async function GET({ params, request }) {
 async function approveCampaign(client, campaignId, adminId) {
   // Check if campaign is pending
   const campaign = await client.query(
-    'SELECT status FROM email_campaigns WHERE id = $1',
+    'SELECT status FROM artist_email_campaigns WHERE id = $1',
     [campaignId]
   );
 
@@ -154,7 +218,7 @@ async function approveCampaign(client, campaignId, adminId) {
 
   // Approve campaign
   await client.query(`
-    UPDATE email_campaigns 
+    UPDATE artist_email_campaigns 
     SET status = 'approved', reviewed_by = $1, reviewed_at = NOW()
     WHERE id = $2
   `, [adminId, campaignId]);
@@ -177,7 +241,7 @@ async function rejectCampaign(client, campaignId, adminId, notes) {
 
   // Check if campaign is pending
   const campaign = await client.query(
-    'SELECT status FROM email_campaigns WHERE id = $1',
+    'SELECT status FROM artist_email_campaigns WHERE id = $1',
     [campaignId]
   );
 
@@ -190,7 +254,7 @@ async function rejectCampaign(client, campaignId, adminId, notes) {
 
   // Reject campaign
   await client.query(`
-    UPDATE email_campaigns 
+    UPDATE artist_email_campaigns 
     SET status = 'rejected', reviewed_by = $1, reviewed_at = NOW(), admin_notes = $2
     WHERE id = $3
   `, [adminId, notes.trim(), campaignId]);
@@ -275,7 +339,7 @@ async function sendCampaign(client, campaign, adminId) {
 
     // Update campaign status
     await client.query(`
-      UPDATE email_campaigns 
+      UPDATE artist_email_campaigns 
       SET status = 'sent', sent_at = NOW(), emails_sent = $1
       WHERE id = $2
     `, [emailsSent, campaign.id]);
@@ -294,7 +358,7 @@ async function sendCampaign(client, campaign, adminId) {
     
     // Update campaign with error status
     await client.query(`
-      UPDATE email_campaigns 
+      UPDATE artist_email_campaigns 
       SET admin_notes = $1
       WHERE id = $2
     `, [`Send error: ${error.message}`, campaign.id]);
@@ -318,7 +382,7 @@ async function previewCampaign(campaignId) {
         ec.*,
         et.html_content,
         u.name as artist_name
-      FROM email_campaigns ec
+      FROM artist_email_campaigns ec
       JOIN email_templates et ON ec.template_id = et.id
       JOIN users u ON ec.artist_id = u.id
       WHERE ec.id = $1
