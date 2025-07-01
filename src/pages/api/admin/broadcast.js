@@ -268,6 +268,7 @@ export async function POST({ request }) {
           console.log(`📧 From: ${fromEmail}`);
           console.log(`📝 Subject: ${subject}`);
           console.log(`🔑 Using Resend API Key: ${process.env.RESEND_API_KEY ? 'Found' : 'NOT FOUND'}`);
+          console.log(`🌍 Environment: ${process.env.NODE_ENV || 'unknown'}`);
 
           const result = await resend.emails.send({
             from: `Artist Events Team <${fromEmail}>`,
@@ -284,9 +285,12 @@ export async function POST({ request }) {
           if (result.error) {
             console.log(`⚠️ Email API error for ${recipient.email}:`, result.error);
             failedCount++;
-          } else {
-            console.log(`✅ Email sent successfully to ${recipient.email}:`, result);
+          } else if (result.data && result.data.id) {
+            console.log(`✅ Email sent successfully to ${recipient.email}:`, result.data.id);
             sentCount++;
+          } else {
+            console.log(`❌ Unexpected response for ${recipient.email}:`, result);
+            failedCount++;
           }
         } catch (error) {
           console.error(`❌ Failed to send email to ${recipient.email}:`, error);
@@ -296,7 +300,7 @@ export async function POST({ request }) {
         
         // Add delay between emails to respect rate limits (Resend allows 2 req/sec)
         if (i < recipientEmails.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 600)); // 0.6 second delay = ~1.7 req/sec
+          await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay = safer for production
         }
       }
 
