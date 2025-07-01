@@ -198,6 +198,7 @@ const userCount = await getUserCount();
               <div class="form-group">
                 <label class="form-label">Recipients</label>
                 <select id="recipients" name="recipients" class="form-control" required>
+                  <option value="test_mode">🧪 Test Mode (Admin Users Only - Safe for Testing)</option>
                   <option value="subscribers">📧 Email Subscribers Only ({subscriberCount} users)</option>
                   <option value="all">👥 All Users ({userCount} users)</option>
                   <option value="artists">🎤 Artists Only</option>

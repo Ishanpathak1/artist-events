@@ -80,7 +80,7 @@ const blog = {
 };
 
 // Create share messages
-const blogUrl = `${Astro.site || 'http://localhost:4321'}/blog/${blog.slug}`;
+const blogUrl = `${Astro.site || 'https://artist-events-theta.vercel.app'}/blog/${blog.slug}`;
 const shareMessage = `Check out this amazing story: "${blog.title}" by ${blog.author} on Artist Events! ${blogUrl}`;
 
 // Get related blogs

@@ -133,6 +133,16 @@ export async function POST({ request }) {
       let queryParams = [];
 
       switch (recipients) {
+        case 'test_mode':
+          recipientQuery = `
+            SELECT email, 
+                   COALESCE(first_name || ' ' || last_name, first_name, email) as display_name, 
+                   id 
+            FROM users
+            WHERE role = 'admin' OR email = 'ishan.pathak2711@gmail.com'
+          `;
+          break;
+          
         case 'subscribers':
           recipientQuery = `
             SELECT DISTINCT u.email, 
@@ -198,6 +208,9 @@ export async function POST({ request }) {
       const recipientResult = await client.query(recipientQuery, queryParams);
       const recipientEmails = recipientResult.rows;
 
+      console.log(`🔍 DEBUG: Query executed for recipient type: ${recipients}`);
+      console.log(`🔍 DEBUG: Found ${recipientEmails.length} recipients:`, recipientEmails);
+
       if (recipientEmails.length === 0) {
         const errorMessage = recipients === 'single' 
           ? `User with email '${single_user_email}' not found in the database`
@@ -230,54 +243,60 @@ export async function POST({ request }) {
         broadcast_type, subject, content, cta_text, cta_url
       );
 
-      // Send emails in batches
+      // Send emails with rate limiting (Resend allows 2 req/sec)
       let sentCount = 0;
       let failedCount = 0;
-      const batchSize = 10;
 
-      for (let i = 0; i < recipientEmails.length; i += batchSize) {
-        const batch = recipientEmails.slice(i, i + batchSize);
+      console.log(`🔍 DEBUG: Starting to send emails to ${recipientEmails.length} recipients`);
+
+      // Send emails one by one with delays to respect rate limits
+      for (let i = 0; i < recipientEmails.length; i++) {
+        const recipient = recipientEmails[i];
+        console.log(`🔍 DEBUG: Processing recipient ${i + 1}/${recipientEmails.length}: ${recipient.email}`);
         
-        const batchPromises = batch.map(async (recipient) => {
-          try {
-            const personalizedContent = emailTemplate
-              .replace(/\{\{username\}\}/g, recipient.display_name || 'Member')
-              .replace(/\{\{email\}\}/g, recipient.email)
-              .replace(/\{\{broadcastId\}\}/g, broadcastId)
-              .replace(/\{\{userId\}\}/g, recipient.id);
+        try {
+          console.log(`🔍 DEBUG: Starting email for recipient:`, recipient);
+          
+          const personalizedContent = emailTemplate
+            .replace(/\{\{username\}\}/g, recipient.display_name || 'Member')
+            .replace(/\{\{email\}\}/g, recipient.email)
+            .replace(/\{\{broadcastId\}\}/g, broadcastId)
+            .replace(/\{\{userId\}\}/g, recipient.id);
 
-            const fromEmail = process.env.FROM_EMAIL || 'onboarding@resend.dev';
-            console.log(`🚀 Attempting to send email to: ${recipient.email}`);
-            console.log(`📧 From: ${fromEmail}`);
-            console.log(`📝 Subject: ${subject}`);
-            console.log(`🔑 Using Resend API Key: ${process.env.RESEND_API_KEY ? 'Found' : 'NOT FOUND'}`);
+          const fromEmail = process.env.FROM_EMAIL || 'onboarding@resend.dev';
+          console.log(`🚀 Attempting to send email to: ${recipient.email}`);
+          console.log(`📧 From: ${fromEmail}`);
+          console.log(`📝 Subject: ${subject}`);
+          console.log(`🔑 Using Resend API Key: ${process.env.RESEND_API_KEY ? 'Found' : 'NOT FOUND'}`);
 
-            const result = await resend.emails.send({
-              from: `Artist Events Team <${fromEmail}>`,
-              to: recipient.email,
-              subject: subject,
-              html: personalizedContent,
-              tags: [
-                { name: 'broadcastId', value: broadcastId.toString() },
-                { name: 'userId', value: recipient.id.toString() },
-                { name: 'type', value: 'admin_broadcast' }
-              ]
-            });
+          const result = await resend.emails.send({
+            from: `Artist Events Team <${fromEmail}>`,
+            to: recipient.email,
+            subject: subject,
+            html: personalizedContent,
+            tags: [
+              { name: 'broadcastId', value: broadcastId.toString() },
+              { name: 'userId', value: recipient.id.toString() },
+              { name: 'type', value: 'admin_broadcast' }
+            ]
+          });
 
+          if (result.error) {
+            console.log(`⚠️ Email API error for ${recipient.email}:`, result.error);
+            failedCount++;
+          } else {
             console.log(`✅ Email sent successfully to ${recipient.email}:`, result);
             sentCount++;
-          } catch (error) {
-            console.error(`❌ Failed to send email to ${recipient.email}:`, error);
-            console.error(`❌ Error details:`, error.message);
-            failedCount++;
           }
-        });
-
-        await Promise.all(batchPromises);
+        } catch (error) {
+          console.error(`❌ Failed to send email to ${recipient.email}:`, error);
+          console.error(`❌ Error details:`, error.message);
+          failedCount++;
+        }
         
-        // Small delay between batches to avoid rate limiting
-        if (i + batchSize < recipientEmails.length) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+        // Add delay between emails to respect rate limits (Resend allows 2 req/sec)
+        if (i < recipientEmails.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 600)); // 0.6 second delay = ~1.7 req/sec
         }
       }
 
@@ -327,7 +346,7 @@ export async function POST({ request }) {
 }
 
 function createBroadcastTemplate(type, subject, content, ctaText, ctaUrl) {
-  const siteUrl = process.env.SITE_URL || 'http://localhost:4321';
+  const siteUrl = process.env.SITE_URL || 'https://artist-events-theta.vercel.app';
 
   return `
     <!DOCTYPE html>

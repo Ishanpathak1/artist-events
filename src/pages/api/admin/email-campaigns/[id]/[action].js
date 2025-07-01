@@ -222,7 +222,7 @@ async function sendCampaign(client, campaign, adminId) {
                 <div>${campaign.content?.replace(/\n/g, '<br>') || ''}</div>
                 <hr>
                 <p style="font-size: 12px; color: #666;">
-                  <a href="${process.env.SITE_URL || 'http://localhost:4321'}/api/email/unsubscribe?email=${recipient.email}">Unsubscribe</a>
+                  <a href="${process.env.SITE_URL || 'https://artist-events-theta.vercel.app'}/api/email/unsubscribe?email=${recipient.email}">Unsubscribe</a>
                 </p>
               </div>
             `,
